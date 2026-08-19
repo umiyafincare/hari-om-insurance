@@ -48,13 +48,14 @@ with header_col2:
 
 st.markdown("---")
 
-# મુખ્ય ટેબ્સ
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+# મુખ્ય ટેબ્સ (બેકઅપ / રિસ્ટોર ટેબ સહિત)
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 ડેશબોર્ડ", 
     "🔔 આગામી રીમાઇન્ડર્સ (૧૫ દિવસ)", 
     "➕ નવી પોલિસી ઉમેરો", 
     "📁 કસ્ટમર ડિટેલ્સ", 
-    "⚙️ એડિટ / ડિલીટ"
+    "⚙️ એડિટ / ડિલીટ",
+    "💾 બેકઅપ / રિસ્ટોર"
 ])
 
 # ----------------- TAB 1: ડેશબોર્ડ -----------------
@@ -110,7 +111,7 @@ with tab2:
                     
                     encoded_msg = urllib.parse.quote(msg_text)
                     clean_mobile = "".join(filter(str.isdigit, str(row['Mobile'])))[-10:]
-                    wa_url = f"[https://wa.me/91](https://wa.me/91){clean_mobile}?text={encoded_msg}"
+                    wa_url = f"https://wa.me/91{clean_mobile}?text={encoded_msg}"
                     
                     with c1:
                         st.markdown(f"👤 **{row['Name']}** | 🚗 વાહન: `{row['Vehicle_No']}` ({row['Vehicle_Type']})")
@@ -244,3 +245,62 @@ with tab5:
                     st.rerun()
     else:
         st.info("ડેટાબેઝ ખાલી છે.")
+
+# ----------------- TAB 6: બેકઅપ અને રિસ્ટોર -----------------
+with tab6:
+    st.subheader("💾 ડેટા બેકઅપ અને રિસ્ટોર (Data Backup & Restore)")
+    
+    b_col1, b_col2 = st.columns(2)
+    
+    with b_col1:
+        st.markdown("### 📥 ડેટા બેકઅપ લો")
+        st.write("તમારા હાલના તમામ ગ્રાહકોના ડેટાની બેકઅપ CSV ફાઇલ ડાઉનલોડ કરો.")
+        if not df.empty:
+            backup_csv = df.to_csv(index=False).encode('utf-8')
+            today_str = datetime.today().strftime('%Y-%m-%d')
+            st.download_button(
+                label="⬇️ સંપૂર્ણ બેકઅપ ડાઉનલોડ કરો (CSV)",
+                data=backup_csv,
+                file_name=f"hari_om_insurance_backup_{today_str}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.warning("બેકઅપ લેવા માટે હાલમાં કોઈ ડેટા નથી.")
+            
+    with b_col2:
+        st.markdown("### 📤 ડેટા રિસ્ટોર કરો")
+        st.write("અગાઉ ડાઉનલોડ કરેલી બેકઅપ CSV ફાઇલ અપલોડ કરીને ડેટા પાછો લાવો.")
+        uploaded_file = st.file_uploader("બેકઅપ CSV ફાઇલ પસંદ કરો", type=["csv"])
+        
+        if uploaded_file is not None:
+            restore_mode = st.radio(
+                "રિસ્ટોર કરવાની રીત પસંદ કરો:",
+                ["હાલના ડેટા સાથે ભેગો કરવો (Merge)", "હાલનો ડેટા બદલીને નવો કરવો (Overwrite)"]
+            )
+            
+            if st.button("🚀 ડેટા રિસ્ટોર કરો"):
+                try:
+                    uploaded_df = pd.read_csv(uploaded_file)
+                    
+                    required_cols = [
+                        "Name", "Mobile", "Vehicle_No", "Vehicle_Type", 
+                        "Policy_Company", "Policy_No", "Premium_Amount", 
+                        "Expiry_Date", "Remarks"
+                    ]
+                    
+                    for col in required_cols:
+                        if col not in uploaded_df.columns:
+                            uploaded_df[col] = ""
+                    
+                    uploaded_df = uploaded_df[required_cols]
+                    
+                    if restore_mode == "હાલના ડેટા સાથે ભેગો કરવો (Merge)":
+                        final_df = pd.concat([df, uploaded_df], ignore_index=True).drop_duplicates()
+                    else:
+                        final_df = uploaded_df
+                        
+                    save_data(final_df)
+                    st.success("✅ ડેટા સફળતાપૂર્વક રિસ્ટોર થઈ ગયો!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ ફાઇલ વાંચવામાં ભૂલ આવી: {e}")
