@@ -93,7 +93,7 @@ st.markdown("---")
 
 # મુખ્ય ટેબ્સ
 t1, t2, t3, t4, t5, t6 = st.tabs([
-    "📊 ડેશબોર્ડ & એનાલિટિક્સ",
+    "📊 ડેશબોર્ડ",
     "🔔 રીમાઇન્ડર ડેસ્ક",
     "➕ નવી એન્ટ્રી",
     "📁 ગ્રાહક ડિરેક્ટરી",
@@ -122,17 +122,6 @@ with t1:
         c2.metric("⚠️ ૧૫ દિવસમાં એક્સપાયર", len(due_15))
         c3.metric("✅ એક્ટિવ પોલિસીઓ", len(active))
         c4.metric("💰 કુલ પ્રીમિયમ પોર્ટફોલિયો", f"₹{df_dash['Premium_Clean'].sum():,.0f}")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        col_chart1, col_chart2 = st.columns(2)
-        with col_chart1:
-            st.markdown("**🚗 વાહન પ્રકાર મુજબ વિભાજન**")
-            v_counts = df["Vehicle_Type"].value_counts()
-            st.bar_chart(v_counts)
-        with col_chart2:
-            st.markdown("**🏢 ટોપ ઇન્સ્યોરન્સ કંપનીઓ**")
-            comp_counts = df[df["Policy_Company"] != ""]["Policy_Company"].value_counts().head(5)
-            st.bar_chart(comp_counts)
     else:
         st.info("ડેશબોર્ડ જોવા માટે નવી પોલિસી ઉમેરો.")
 
