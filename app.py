@@ -13,13 +13,112 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ----------------- SECURITY PIN CONFIGURATION -----------------
-APP_PIN = "7698"  # તમે તમારી મરજી મુજબ 4-અંકનો PIN અહીં બદલી શકો છો
+# ----------------- SQLite ડેટાબેઝ સેટઅપ -----------------
+DB_FILE = "insurance_master.db"
 
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    # પોલિસી ટેબલ
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS policies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            mobile TEXT,
+            vehicle_no TEXT,
+            vehicle_type TEXT,
+            policy_company TEXT,
+            policy_no TEXT,
+            premium_amount REAL,
+            expiry_date TEXT,
+            remarks TEXT,
+            last_renewed TEXT
+        )
+    ''')
+    # સિક્યોરિટી પિન ટેબલ
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
+    # જો PIN ન હોય તો ડિફૉલ્ટ 7698 સેટ કરવો
+    c.execute("SELECT value FROM app_settings WHERE key = 'app_pin'")
+    if not c.fetchone():
+        c.execute("INSERT INTO app_settings (key, value) VALUES ('app_pin', '7698')")
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def get_current_pin():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT value FROM app_settings WHERE key = 'app_pin'")
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else "7698"
+
+def update_pin(new_pin):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE app_settings SET value = ? WHERE key = 'app_pin'", (new_pin,))
+    conn.commit()
+    conn.close()
+
+def get_data():
+    conn = sqlite3.connect(DB_FILE)
+    df = pd.read_sql_query("SELECT * FROM policies", conn)
+    conn.close()
+    return df
+
+def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO policies (name, mobile, vehicle_no, vehicle_type, policy_company, policy_no, premium_amount, expiry_date, remarks, last_renewed)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks, str(date.today())))
+    conn.commit()
+    conn.close()
+
+def update_policy(p_id, name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        UPDATE policies 
+        SET name=?, mobile=?, vehicle_no=?, vehicle_type=?, policy_company=?, policy_no=?, premium_amount=?, expiry_date=?, remarks=?
+        WHERE id=?
+    ''', (name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks, p_id))
+    conn.commit()
+    conn.close()
+
+def delete_policy(p_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('DELETE FROM policies WHERE id=?', (p_id,))
+    conn.commit()
+    conn.close()
+
+def renew_one_year(p_id, current_expiry_str):
+    try:
+        curr_dt = datetime.strptime(str(current_expiry_str), "%Y-%m-%d").date()
+    except Exception:
+        curr_dt = date.today()
+    new_dt = str(curr_dt + timedelta(days=365))
+    
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('UPDATE policies SET expiry_date=?, last_renewed=? WHERE id=?', (new_dt, str(date.today()), p_id))
+    conn.commit()
+    conn.close()
+
+df = get_data()
+
+# ----------------- SESSION STATE & STYLING -----------------
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
-# ----------------- MODERN CUSTOM CSS & GOOGLE FONTS -----------------
 st.markdown("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -151,8 +250,6 @@ if not st.session_state.authenticated:
     _, col_mid, _ = st.columns([1, 1.8, 1])
     with col_mid:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        
-        # લોગો
         if os.path.exists("HARI OM IL.jpg"):
             st.image("HARI OM IL.jpg", width=220)
         elif os.path.exists("logo.jpg"):
@@ -168,88 +265,14 @@ if not st.session_state.authenticated:
             login_btn = st.form_submit_button("🔓 પોર્ટલ અનલોક કરો")
             
             if login_btn:
-                if pin_input == APP_PIN:
+                current_db_pin = get_current_pin()
+                if pin_input == current_db_pin:
                     st.session_state.authenticated = True
                     st.success("✅ લોગિન સફળ થયું!")
                     st.rerun()
                 else:
                     st.error("❌ ખોટો પિન છે. કૃપા કરીને સાચો પિન દાખલ કરો.")
     st.stop()
-
-# ----------------- SQLite ડેટાબેઝ સેટઅપ -----------------
-DB_FILE = "insurance_master.db"
-
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS policies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            mobile TEXT,
-            vehicle_no TEXT,
-            vehicle_type TEXT,
-            policy_company TEXT,
-            policy_no TEXT,
-            premium_amount REAL,
-            expiry_date TEXT,
-            remarks TEXT,
-            last_renewed TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-init_db()
-
-def get_data():
-    conn = sqlite3.connect(DB_FILE)
-    df = pd.read_sql_query("SELECT * FROM policies", conn)
-    conn.close()
-    return df
-
-def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''
-        INSERT INTO policies (name, mobile, vehicle_no, vehicle_type, policy_company, policy_no, premium_amount, expiry_date, remarks, last_renewed)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks, str(date.today())))
-    conn.commit()
-    conn.close()
-
-def update_policy(p_id, name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''
-        UPDATE policies 
-        SET name=?, mobile=?, vehicle_no=?, vehicle_type=?, policy_company=?, policy_no=?, premium_amount=?, expiry_date=?, remarks=?
-        WHERE id=?
-    ''', (name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks, p_id))
-    conn.commit()
-    conn.close()
-
-def delete_policy(p_id):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('DELETE FROM policies WHERE id=?', (p_id,))
-    conn.commit()
-    conn.close()
-
-def renew_one_year(p_id, current_expiry_str):
-    try:
-        curr_dt = datetime.strptime(str(current_expiry_str), "%Y-%m-%d").date()
-    except Exception:
-        curr_dt = date.today()
-    new_dt = str(curr_dt + timedelta(days=365))
-    
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('UPDATE policies SET expiry_date=?, last_renewed=? WHERE id=?', (new_dt, str(date.today()), p_id))
-    conn.commit()
-    conn.close()
-
-df = get_data()
 
 # સેશન સ્ટેટ મેનેજમેન્ટ
 if 'current_page' not in st.session_state:
@@ -274,7 +297,8 @@ with st.sidebar:
         "➕ નવી પોલિસી એન્ટ્રી", 
         "📁 ગ્રાહક ડિરેક્ટરી", 
         "⚙️ એડિટ / ડિલીટ",
-        "💾 બેકઅપ & રિસ્ટોર"
+        "💾 બેકઅપ & રિસ્ટોર",
+        "🔐 પિન બદલો"
     ]
     
     for item in menu_items:
@@ -286,7 +310,6 @@ with st.sidebar:
             
     st.markdown("---")
     
-    # લોગઆઉટ બટન
     if st.button("🔒 લોગઆઉટ (Logout)", key="logout_btn"):
         st.session_state.authenticated = False
         st.rerun()
@@ -303,7 +326,6 @@ if st.session_state.current_page == "📊 ડેશબોર્ડ":
     st.markdown("<h2 style='color:#0f172a;'>📊 બિઝનેસ ડેશબોર્ડ</h2>", unsafe_allow_html=True)
     st.markdown("<p style='color:#64748b; font-size:14px;'>તમારી પોલિસીઓ, લાઈવ એનાલિટિક્સ અને ઇન્સ્ટન્ટ ગ્રાહક સર્ચ</p>", unsafe_allow_html=True)
     
-    # ક્વિક સર્ચ સેક્શન
     st.markdown("### 🔍 ક્વિક સર્ચ & ગ્રાહક સ્ટેટસ (નવો કે જૂનો ગ્રાહક)")
     search_term = st.text_input("વાહન નંબર (દા.ત. GJ-02-AB-1234), મોબાઈલ નંબર કે પોલિસી નંબર નાખો:", placeholder="વાહન નંબર / મોબાઈલ / પોલિસી નં.")
     
@@ -374,7 +396,6 @@ if st.session_state.current_page == "📊 ડેશબોર્ડ":
                 
     st.markdown("---")
 
-    # મેટ્રિક કાર્ડ્સ
     if not df.empty:
         df_dash = df.copy()
         df_dash["expiry_dt"] = pd.to_datetime(df_dash["expiry_date"], errors="coerce").dt.date
@@ -598,3 +619,29 @@ elif st.session_state.current_page == "💾 બેકઅપ & રિસ્ટો
                 st.rerun()
             except Exception as err:
                 st.error(f"એરર આવી: {err}")
+
+# ----------------- 7. પિન બદલો (Change PIN) -----------------
+elif st.session_state.current_page == "🔐 પિન બદલો":
+    st.markdown("<h2 style='color:#0f172a;'>🔐 સિક્યોરિટી પિન બદલો</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#64748b; font-size:14px;'>પોર્ટલ લોગિન માટે નવો ૪-અંકનો સિક્યોરિટી પિન સેટ કરો.</p>", unsafe_allow_html=True)
+    
+    col_p1, _ = st.columns([1.5, 1])
+    with col_p1:
+        with st.form("change_pin_form"):
+            old_pin_input = st.text_input("જૂનો પિન (Current PIN)", type="password", placeholder="દા.ત. ****")
+            new_pin_input = st.text_input("નવો પિન (New PIN)", type="password", placeholder="૪-અંકનો નવો પિન")
+            confirm_pin_input = st.text_input("નવો પિન કન્ફર્મ કરો (Confirm New PIN)", type="password", placeholder="ફરીથી નવો પિન દાખલ કરો")
+            
+            save_pin_btn = st.form_submit_button("💾 નવો પિન સેવ કરો")
+            
+            if save_pin_btn:
+                current_db_pin = get_current_pin()
+                if old_pin_input != current_db_pin:
+                    st.error("❌ જૂનો પિન ખોટો છે.")
+                elif not new_pin_input.strip() or len(new_pin_input.strip()) < 4:
+                    st.warning("⚠️ નવો પિન ઓછામાં ઓછો ૪ અંકનો હોવો જોઈએ.")
+                elif new_pin_input != confirm_pin_input:
+                    st.error("❌ નવો પિન અને કન્ફર્મ પિન મેચ થતા નથી.")
+                else:
+                    update_pin(new_pin_input.strip())
+                    st.success("✅ સિક્યોરિટી પિન સફળતાપૂર્વક બદલાઈ ગયો છે!")
