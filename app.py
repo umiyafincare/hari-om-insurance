@@ -261,7 +261,7 @@ if st.session_state.current_page == "📊 ડેશબોર્ડ":
     st.markdown("<h2 style='color:#0f172a;'>📊 બિઝનેસ ડેશબોર્ડ</h2>", unsafe_allow_html=True)
     st.markdown("<p style='color:#64748b; font-size:14px;'>તમારી પોલિસીઓ, લાઈવ એનાલિટિક્સ અને ઇન્સ્ટન્ટ ગ્રાહક સર્ચ</p>", unsafe_allow_html=True)
     
-    # ---------------- નવું સર્ચ સેક્શન (જૂનો કે નવો ગ્રાહક) ----------------
+    # ક્વિક સર્ચ સેક્શન
     st.markdown("### 🔍 ક્વિક સર્ચ & ગ્રાહક સ્ટેટસ (નવો કે જૂનો ગ્રાહક)")
     search_term = st.text_input("વાહન નંબર (દા.ત. GJ-02-AB-1234), મોબાઈલ નંબર કે પોલિસી નંબર નાખો:", placeholder="વાહન નંબર / મોબાઈલ / પોલિસી નં.")
     
@@ -466,21 +466,12 @@ elif st.session_state.current_page == "➕ નવી પોલિસી એન�
             else:
                 st.error("કૃપા કરીને નામ, મોબાઇલ અને વાહન નંબર ભરો.")
 
-# ----------------- 4. તમામ ગ્રાહકોની યાદી -----------------
+# ----------------- 4. તમામ ગ્રાહકોની યાદી (ફિલ્ટર વગર સીધું ટેબલ) -----------------
 elif st.session_state.current_page == "📁 ગ્રાહક ડિરેક્ટરી":
     st.markdown("<h2 style='color:#0f172a;'>📁 તમામ ગ્રાહકોની યાદી</h2>", unsafe_allow_html=True)
     if not df.empty:
-        sq = st.text_input("🔍 સર્ચ ફિલ્ટર (નામ, વાહન નંબર કે મોબાઇલ):")
-        vdf = df.copy()
-        if sq:
-            q = sq.lower()
-            vdf = vdf[
-                vdf["name"].astype(str).str.lower().str.contains(q) |
-                vdf["vehicle_no"].astype(str).str.lower().str.contains(q) |
-                vdf["mobile"].astype(str).contains(q)
-            ]
-        st.dataframe(vdf, use_container_width=True)
-        csv_exp = vdf.to_csv(index=False).encode('utf-8')
+        st.dataframe(df, use_container_width=True)
+        csv_exp = df.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Excel / CSV માં ડાઉનલોડ કરો", data=csv_exp, file_name="HariOm_Clients.csv", mime="text/csv")
     else:
         st.info("કોઈ ગ્રાહકનો ડેટા નથી.")
