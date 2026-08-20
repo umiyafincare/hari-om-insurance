@@ -13,6 +13,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ----------------- SECURITY PIN CONFIGURATION -----------------
+APP_PIN = "7698"  # તમે તમારી મરજી મુજબ 4-અંકનો PIN અહીં બદલી શકો છો
+
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
 # ----------------- MODERN CUSTOM CSS & GOOGLE FONTS -----------------
 st.markdown("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -140,6 +146,36 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ----------------- PIN VERIFICATION SCREEN -----------------
+if not st.session_state.authenticated:
+    _, col_mid, _ = st.columns([1, 1.8, 1])
+    with col_mid:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        # લોગો
+        if os.path.exists("HARI OM IL.jpg"):
+            st.image("HARI OM IL.jpg", width=220)
+        elif os.path.exists("logo.jpg"):
+            st.image("logo.jpg", width=220)
+        else:
+            st.markdown("<h1 style='text-align:center;'>🛡️</h1>", unsafe_allow_html=True)
+            
+        st.markdown("<h3 style='text-align:center; color:#0f172a; margin-top:10px;'>🔒 હરિ ઓમ ઇન્સ્યોરન્સ</h3>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; color:#64748b; font-size:14px;'>પોર્ટલ એક્સેસ કરવા માટે ૪-અંકનો સિક્યોરિટી પિન દાખલ કરો</p>", unsafe_allow_html=True)
+        
+        with st.form("pin_form"):
+            pin_input = st.text_input("સિક્યોરિટી પિન (Security PIN)", type="password", placeholder="દા.ત. ****")
+            login_btn = st.form_submit_button("🔓 પોર્ટલ અનલોક કરો")
+            
+            if login_btn:
+                if pin_input == APP_PIN:
+                    st.session_state.authenticated = True
+                    st.success("✅ લોગિન સફળ થયું!")
+                    st.rerun()
+                else:
+                    st.error("❌ ખોટો પિન છે. કૃપા કરીને સાચો પિન દાખલ કરો.")
+    st.stop()
+
 # ----------------- SQLite ડેટાબેઝ સેટઅપ -----------------
 DB_FILE = "insurance_master.db"
 
@@ -249,8 +285,14 @@ with st.sidebar:
             st.rerun()
             
     st.markdown("---")
+    
+    # લોગઆઉટ બટન
+    if st.button("🔒 લોગઆઉટ (Logout)", key="logout_btn"):
+        st.session_state.authenticated = False
+        st.rerun()
+
     st.markdown("""
-    <div style='background:#f8fafc; padding:10px 12px; border-radius:10px; border:1px solid #e2e8f0; font-size:11.5px; color:#475569;'>
+    <div style='background:#f8fafc; padding:10px 12px; border-radius:10px; border:1px solid #e2e8f0; font-size:11.5px; color:#475569; margin-top:10px;'>
         <b>📍 સરનામું:</b> F-46, વાત્સલ્ય સ્ટેટસ, ધવલ પ્લાઝા પાસે, કડી - 384440<br>
         <b>📞 સંપર્ક:</b> 7698564672 / 9714776364
     </div>
@@ -466,7 +508,7 @@ elif st.session_state.current_page == "➕ નવી પોલિસી એન�
             else:
                 st.error("કૃપા કરીને નામ, મોબાઇલ અને વાહન નંબર ભરો.")
 
-# ----------------- 4. તમામ ગ્રાહકોની યાદી (ફિલ્ટર વગર સીધું ટેબલ) -----------------
+# ----------------- 4. તમામ ગ્રાહકોની યાદી -----------------
 elif st.session_state.current_page == "📁 ગ્રાહક ડિરેક્ટરી":
     st.markdown("<h2 style='color:#0f172a;'>📁 તમામ ગ્રાહકોની યાદી</h2>", unsafe_allow_html=True)
     if not df.empty:
