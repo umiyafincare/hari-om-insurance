@@ -37,16 +37,15 @@ st.markdown("""
     /* પ્રીમિયમ ગ્રેડિયન્ટ મેટ્રિક કાર્ડ્સ */
     [data-testid="stMetric"] {
         background: #ffffff;
-        padding: 20px 24px;
-        border-radius: 16px;
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+        padding: 18px 20px;
+        border-radius: 14px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
         border: 1px solid #e2e8f0;
-        border-top: 4px solid #2563eb;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border-top: 4px solid #1E3A8A;
+        transition: transform 0.2s ease;
     }
     [data-testid="stMetric"]:hover {
         transform: translateY(-3px);
-        box-shadow: 0 14px 28px -4px rgba(37, 99, 235, 0.12);
     }
     [data-testid="stMetricValue"] {
         font-family: 'Poppins', sans-serif !important;
@@ -57,57 +56,64 @@ st.markdown("""
     /* રીમાઇન્ડર કાર્ડ લુક */
     .reminder-card {
         background: #ffffff;
-        border-radius: 16px;
-        padding: 20px;
-        margin-bottom: 14px;
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 12px;
         border: 1px solid #e2e8f0;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-        transition: all 0.2s ease;
-    }
-    .reminder-card:hover {
-        border-color: #93c5fd;
-        box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08);
     }
 
     /* સ્ટેટસ બેજ */
     .badge-urgent {
         background: #fee2e2;
         color: #b91c1c;
-        padding: 6px 12px;
+        padding: 5px 12px;
         border-radius: 9999px;
         font-weight: 600;
         font-size: 12px;
-        letter-spacing: 0.3px;
         border: 1px solid #fca5a5;
     }
     .badge-warning {
         background: #fef3c7;
         color: #b45309;
-        padding: 6px 12px;
+        padding: 5px 12px;
         border-radius: 9999px;
         font-weight: 600;
         font-size: 12px;
-        letter-spacing: 0.3px;
         border: 1px solid #fde68a;
     }
 
-    /* બટન્સ સ્ટાઇલિંગ */
-    .stButton>button, .stLinkButton>a {
-        border-radius: 10px !important;
-        font-family: 'Poppins', sans-serif !important;
-        font-weight: 500 !important;
-        padding: 8px 18px !important;
-        transition: all 0.2s ease !important;
-    }
-    .stButton>button:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
-    }
-
-    /* સાઇડબાર ડિઝાઇન */
+    /* સાઇડબાર બટન નેવિગેશન કસ્ટમાઇઝેશન */
     [data-testid="stSidebar"] {
         background-color: #ffffff;
         border-right: 1px solid #e2e8f0;
+    }
+    [data-testid="stSidebar"] .stButton > button {
+        width: 100% !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+        padding: 10px 16px !important;
+        border-radius: 10px !important;
+        margin-bottom: 6px !important;
+        font-family: 'Poppins', sans-serif !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        border: 1px solid #e2e8f0 !important;
+        background-color: #f8fafc !important;
+        color: #334155 !important;
+        transition: all 0.2s ease !important;
+    }
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background-color: #1E3A8A !important;
+        color: #ffffff !important;
+        border-color: #1E3A8A !important;
+        transform: translateX(4px);
+    }
+    [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        background-color: #1E3A8A !important;
+        color: #ffffff !important;
+        border-color: #1E3A8A !important;
+        box-shadow: 0 4px 12px rgba(30, 58, 138, 0.25) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -187,39 +193,50 @@ def renew_one_year(p_id, current_expiry_str):
 
 df = get_data()
 
-# ----------------- સાઇડબાર નેવિગેશન -----------------
-with st.sidebar:
-    if os.path.exists("HARI OM IL.jpg"):
-        st.image("HARI OM IL.jpg", use_container_width=True)
-    elif os.path.exists("logo.jpg"):
-        st.image("logo.jpg", use_container_width=True)
-    else:
-        st.markdown("<h2 style='text-align:center; color:#1e3a8a;'>🛡️ HARI OM</h2>", unsafe_allow_html=True)
+# સેશન સ્ટેટમાં એક્ટિવ પેજ સેટ કરવું
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "📊 ડેશબોર્ડ"
 
-    st.markdown("<p style='font-size:12px; color:#64748b; font-weight:600; text-transform:uppercase; margin-top:15px;'>મેઇન મેનૂ</p>", unsafe_allow_html=True)
-    menu_choice = st.radio(
-        "",
-        [
-            "📊 ડેશબોર્ડ", 
-            "🔔 રીમાઇન્ડર ડેસ્ક", 
-            "➕ નવી પોલિસી એન્ટ્રી", 
-            "📁 ગ્રાહક ડિરેક્ટરી", 
-            "⚙️ એડિટ / ડિલીટ",
-            "💾 બેકઅપ & રિસ્ટોર"
-        ],
-        index=0
-    )
+# ----------------- સાઇડબાર: નાનો લોગો અને બટન મેનૂ -----------------
+with st.sidebar:
+    # નાનો લોગો પ્રદર્શિત કરવા માટે કોલમ લેઆઉટ
+    logo_c1, logo_c2, logo_c3 = st.columns([1, 2.5, 1])
+    with logo_c2:
+        if os.path.exists("HARI OM IL.jpg"):
+            st.image("HARI OM IL.jpg", use_container_width=True)
+        elif os.path.exists("logo.jpg"):
+            st.image("logo.jpg", use_container_width=True)
+        else:
+            st.markdown("<h3 style='text-align:center; color:#1e3a8a;'>🛡️ HARI OM</h3>", unsafe_allow_html=True)
+
+    st.markdown("<p style='font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase; margin: 12px 0 6px 0;'>મેનૂ વિકલ્પો</p>", unsafe_allow_html=True)
     
+    menu_items = [
+        "📊 ડેશબોર્ડ", 
+        "🔔 રીમાઇન્ડર ડેસ્ક", 
+        "➕ નવી પોલિસી એન્ટ્રી", 
+        "📁 ગ્રાહક ડિરેક્ટરી", 
+        "⚙️ એડિટ / ડિલીટ",
+        "💾 બેકઅપ & રિસ્ટોર"
+    ]
+    
+    for item in menu_items:
+        is_active = (st.session_state.current_page == item)
+        btn_type = "primary" if is_active else "secondary"
+        if st.button(item, key=f"nav_btn_{item}", type=btn_type):
+            st.session_state.current_page = item
+            st.rerun()
+            
     st.markdown("---")
     st.markdown("""
-    <div style='background:#f8fafc; padding:12px; border-radius:10px; border:1px solid #e2e8f0; font-size:12px; color:#475569;'>
+    <div style='background:#f8fafc; padding:10px 12px; border-radius:10px; border:1px solid #e2e8f0; font-size:11.5px; color:#475569;'>
         <b>📍 સરનામું:</b> F-46, વાત્સલ્ય સ્ટેટસ, ધવલ પ્લાઝા પાસે, કડી - 384440<br>
-        <b>📞 હેલ્પલાઇન:</b> 7698564672 / 9714776364
+        <b>📞 સંપર્ક:</b> 7698564672 / 9714776364
     </div>
     """, unsafe_allow_html=True)
 
 # ----------------- 1. ડેશબોર્ડ -----------------
-if menu_choice == "📊 ડેશબોર્ડ":
+if st.session_state.current_page == "📊 ડેશબોર્ડ":
     st.markdown("<h2 style='color:#0f172a;'>📊 બિઝનેસ ડેશબોર્ડ</h2>", unsafe_allow_html=True)
     st.markdown("<p style='color:#64748b; font-size:14px;'>તમારી પોલિસીઓ અને રિન્યુઅલનું લાઈવ એનાલિટિક્સ</p>", unsafe_allow_html=True)
     
@@ -245,7 +262,7 @@ if menu_choice == "📊 ડેશબોર્ડ":
         st.info("ડેશબોર્ડ પર ડેટા જોવા માટે નવી પોલિસી ઉમેરો.")
 
 # ----------------- 2. રીમાઇન્ડર ડેસ્ક -----------------
-elif menu_choice == "🔔 રીમાઇન્ડર ડેસ્ક":
+elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડેસ્ક":
     st.markdown("<h2 style='color:#0f172a;'>🔔 પોલિસી રિન્યુઅલ રીમાઇન્ડર</h2>", unsafe_allow_html=True)
     
     filter_col, template_col = st.columns(2)
@@ -324,7 +341,7 @@ elif menu_choice == "🔔 રીમાઇન્ડર ડેસ્ક":
         st.info("કોઈ ડેટા ઉપલબ્ધ નથી.")
 
 # ----------------- 3. નવી એન્ટ્રી -----------------
-elif menu_choice == "➕ નવી પોલિસી એન્ટ્રી":
+elif st.session_state.current_page == "➕ નવી પોલિસી એન્ટ્રી":
     st.markdown("<h2 style='color:#0f172a;'>➕ નવી પોલિસી ઉમેરો</h2>", unsafe_allow_html=True)
     with st.form("new_entry_form", clear_on_submit=True):
         c_a, c_b = st.columns(2)
@@ -357,7 +374,7 @@ elif menu_choice == "➕ નવી પોલિસી એન્ટ્રી":
                 st.error("કૃપા કરીને નામ, મોબાઇલ અને વાહન નંબર ભરો.")
 
 # ----------------- 4. તમામ ગ્રાહકોની યાદી -----------------
-elif menu_choice == "📁 ગ્રાહક ડિરેક્ટરી":
+elif st.session_state.current_page == "📁 ગ્રાહક ડિરેક્ટરી":
     st.markdown("<h2 style='color:#0f172a;'>📁 તમામ ગ્રાહકોની યાદી</h2>", unsafe_allow_html=True)
     if not df.empty:
         sq = st.text_input("🔍 સર્ચ ફિલ્ટર (નામ, વાહન નંબર કે મોબાઇલ):")
@@ -376,7 +393,7 @@ elif menu_choice == "📁 ગ્રાહક ડિરેક્ટરી":
         st.info("કોઈ ગ્રાહકનો ડેટા નથી.")
 
 # ----------------- 5. એડિટ / ડિલીટ -----------------
-elif menu_choice == "⚙️ એડિટ / ડિલીટ":
+elif st.session_state.current_page == "⚙️ એડિટ / ડિલીટ":
     st.markdown("<h2 style='color:#0f172a;'>⚙️ ગ્રાહક ડેટા સુધારો અથવા રદ કરો</h2>", unsafe_allow_html=True)
     if not df.empty:
         opts = {f"{r['id']}: {r['name']} - {r['vehicle_no']}": r['id'] for _, r in df.iterrows()}
@@ -421,7 +438,7 @@ elif menu_choice == "⚙️ એડિટ / ડિલીટ":
         st.info("ડેટાબેઝ ખાલી છે.")
 
 # ----------------- 6. બેકઅપ અને રિસ્ટોર -----------------
-elif menu_choice == "💾 બેકઅપ & રિસ્ટોર":
+elif st.session_state.current_page == "💾 બેકઅપ & રિસ્ટોર":
     st.markdown("<h2 style='color:#0f172a;'>💾 ડેટા બેકઅપ અને રિસ્ટોર</h2>", unsafe_allow_html=True)
     bk1, bk2 = st.columns(2)
     with bk1:
