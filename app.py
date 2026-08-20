@@ -20,7 +20,6 @@ st.markdown("""
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 
 <style>
-    /* મુખ્ય ફોન્ટ અને બેકગ્રાઉન્ડ */
     html, body, [class*="css"], .stMarkdown, .stText {
         font-family: 'Inter', sans-serif;
     }
@@ -34,7 +33,6 @@ st.markdown("""
         background-color: #f1f5f9;
     }
 
-    /* પ્રીમિયમ ગ્રેડિયન્ટ મેટ્રિક કાર્ડ્સ */
     [data-testid="stMetric"] {
         background: #ffffff;
         padding: 18px 20px;
@@ -53,7 +51,6 @@ st.markdown("""
         color: #0f172a !important;
     }
 
-    /* રીમાઇન્ડર કાર્ડ લુક */
     .reminder-card {
         background: #ffffff;
         border-radius: 14px;
@@ -63,7 +60,24 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
     }
 
-    /* સ્ટેટસ બેજ */
+    .customer-found-card {
+        background: #f0fdf4;
+        border: 1.5px solid #86efac;
+        border-radius: 14px;
+        padding: 18px;
+        margin-top: 15px;
+        margin-bottom: 15px;
+    }
+
+    .customer-not-found-card {
+        background: #fef2f2;
+        border: 1.5px solid #fca5a5;
+        border-radius: 14px;
+        padding: 18px;
+        margin-top: 15px;
+        margin-bottom: 15px;
+    }
+
     .badge-urgent {
         background: #fee2e2;
         color: #b91c1c;
@@ -82,8 +96,16 @@ st.markdown("""
         font-size: 12px;
         border: 1px solid #fde68a;
     }
+    .badge-success {
+        background: #dcfce7;
+        color: #166534;
+        padding: 5px 12px;
+        border-radius: 9999px;
+        font-weight: 600;
+        font-size: 12px;
+        border: 1px solid #bbf7d0;
+    }
 
-    /* સાઇડબાર બટન નેવિગેશન કસ્ટમાઇઝેશન */
     [data-testid="stSidebar"] {
         background-color: #ffffff;
         border-right: 1px solid #e2e8f0;
@@ -193,13 +215,12 @@ def renew_one_year(p_id, current_expiry_str):
 
 df = get_data()
 
-# સેશન સ્ટેટમાં એક્ટિવ પેજ સેટ કરવું
+# સેશન સ્ટેટ મેનેજમેન્ટ
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "📊 ડેશબોર્ડ"
 
-# ----------------- સાઇડબાર: નાનો લોગો અને બટન મેનૂ -----------------
+# ----------------- સાઇડબાર નેવિગેશન -----------------
 with st.sidebar:
-    # નાનો લોગો પ્રદર્શિત કરવા માટે કોલમ લેઆઉટ
     logo_c1, logo_c2, logo_c3 = st.columns([1, 2.5, 1])
     with logo_c2:
         if os.path.exists("HARI OM IL.jpg"):
@@ -238,8 +259,80 @@ with st.sidebar:
 # ----------------- 1. ડેશબોર્ડ -----------------
 if st.session_state.current_page == "📊 ડેશબોર્ડ":
     st.markdown("<h2 style='color:#0f172a;'>📊 બિઝનેસ ડેશબોર્ડ</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='color:#64748b; font-size:14px;'>તમારી પોલિસીઓ અને રિન્યુઅલનું લાઈવ એનાલિટિક્સ</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#64748b; font-size:14px;'>તમારી પોલિસીઓ, લાઈવ એનાલિટિક્સ અને ઇન્સ્ટન્ટ ગ્રાહક સર્ચ</p>", unsafe_allow_html=True)
     
+    # ---------------- નવું સર્ચ સેક્શન (જૂનો કે નવો ગ્રાહક) ----------------
+    st.markdown("### 🔍 ક્વિક સર્ચ & ગ્રાહક સ્ટેટસ (નવો કે જૂનો ગ્રાહક)")
+    search_term = st.text_input("વાહન નંબર (દા.ત. GJ-02-AB-1234), મોબાઈલ નંબર કે પોલિસી નંબર નાખો:", placeholder="વાહન નંબર / મોબાઈલ / પોલિસી નં.")
+    
+    if search_term.strip():
+        clean_query = search_term.strip().lower()
+        search_results = df[
+            df["vehicle_no"].astype(str).str.lower().str.replace("-", "").str.replace(" ", "").str.contains(clean_query.replace("-", "").replace(" ", "")) |
+            df["mobile"].astype(str).str.contains(clean_query) |
+            df["policy_no"].astype(str).str.lower().str.contains(clean_query)
+        ]
+        
+        if not search_results.empty:
+            st.markdown(f"""
+            <div class="customer-found-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0; color:#166534;">✅ પોલિસી મળી ગઈ (જૂનો ગ્રાહક છે)</h4>
+                    <span class="badge-success">કુલ રેકોર્ડ: {len(search_results)}</span>
+                </div>
+                <p style="margin:5px 0 0 0; color:#15803d; font-size:13px;">આ ગ્રાહકનો ડેટા પહેલેથી જ આપણી સિસ્ટમમાં ઉપલબ્ધ છે.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            for _, r in search_results.iterrows():
+                with st.container():
+                    col_det1, col_det2 = st.columns([3, 1])
+                    
+                    try:
+                        exp_d = datetime.strptime(str(r['expiry_date']), "%Y-%m-%d").date()
+                        days_diff = (exp_d - date.today()).days
+                        if days_diff < 0:
+                            status_badge = f"<span class='badge-urgent'>❌ એક્સપાયર્ડ ({abs(days_diff)} દિવસ પહેલાં)</span>"
+                        elif days_diff <= 15:
+                            status_badge = f"<span class='badge-warning'>⚠️ {days_diff} દિવસ બાકી</span>"
+                        else:
+                            status_badge = f"<span class='badge-success'>✅ એક્ટિવ ({days_diff} દિવસ બાકી)</span>"
+                    except:
+                        status_badge = ""
+
+                    with col_det1:
+                        st.markdown(f"👤 **{r['name']}** | 🚗 વાહન: `{r['vehicle_no']}` ({r['vehicle_type']}) | {status_badge}", unsafe_allow_html=True)
+                        st.markdown(f"🏢 **કંપની:** {r['policy_company']} | 📋 **પોલિસી નં:** `{r['policy_no']}` | 💰 **પ્રીમિયમ:** ₹{r['premium_amount']:,.0f} | 📅 **એક્સપાયરી:** `{r['expiry_date']}`")
+                        if r['remarks']:
+                            st.caption(f"📝 નોંધ: {r['remarks']}")
+                            
+                    with col_det2:
+                        msg_text = (
+                            f"નમસ્તે {r['name']}જી,\n"
+                            f"હરિ ઓમ ઇન્સ્યોરન્સ તરફથી આપના વાહન *{r['vehicle_no']}* ની પોલિસી એક્સપાયરી તારીખ *{r['expiry_date']}* છે.\n"
+                            f"રિન્યુઅલ માટે સંપર્ક કરો: 7698564672."
+                        )
+                        wa_url = f"https://wa.me/91{''.join(filter(str.isdigit, str(r['mobile'])))[-10:]}?text={urllib.parse.quote(msg_text)}"
+                        st.link_button("📲 WhatsApp", wa_url)
+                        if st.button("⚡ ૧-ક્લિક રિન્યુ", key=f"quick_ren_{r['id']}"):
+                            renew_one_year(r['id'], r['expiry_date'])
+                            st.success("પોલિસી ૧ વર્ષ માટે રિન્યુ થઈ ગઈ!")
+                            st.rerun()
+                    st.markdown("<hr style='margin:8px 0; border-color:#dcfce7;'>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="customer-not-found-card">
+                <h4 style="margin:0; color:#991b1b;">❌ રેકોર્ડ મળ્યો નથી (નવો ગ્રાહક છે)</h4>
+                <p style="margin:5px 0 0 0; color:#b91c1c; font-size:13px;">વાહન નંબર <b>'{search_term}'</b> આપણી સિસ્ટમમાં ઉપલબ્ધ નથી. તમે આ ગ્રાહકની નવી પોલિસી બનાવી શકો છો.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("➕ આ નવા ગ્રાહકની પોલિસી ઉમેરો"):
+                st.session_state.current_page = "➕ નવી પોલિસી એન્ટ્રી"
+                st.rerun()
+                
+    st.markdown("---")
+
+    # મેટ્રિક કાર્ડ્સ
     if not df.empty:
         df_dash = df.copy()
         df_dash["expiry_dt"] = pd.to_datetime(df_dash["expiry_date"], errors="coerce").dt.date
