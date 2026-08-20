@@ -7,46 +7,107 @@ import os
 
 # પેજ કન્ફિગરેશન
 st.set_page_config(
-    page_title="Hari Om Insurance Portal",
+    page_title="Hari Om Insurance & Loan Advisor",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# CSS સ્ટાઇલિંગ
+# ----------------- MODERN CUSTOM CSS & GOOGLE FONTS -----------------
 st.markdown("""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
 <style>
-    .main { background-color: #f8fafc; }
-    .stMetric {
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
-        border-left: 5px solid #1E3A8A;
+    /* મુખ્ય ફોન્ટ અને બેકગ્રાઉન્ડ */
+    html, body, [class*="css"], .stMarkdown, .stText {
+        font-family: 'Inter', sans-serif;
     }
-    .reminder-card {
-        background-color: #ffffff;
+    
+    h1, h2, h3, h4, h5, h6, .stMetric label {
+        font-family: 'Poppins', sans-serif !important;
+        font-weight: 600 !important;
+    }
+
+    .main {
+        background-color: #f1f5f9;
+    }
+
+    /* પ્રીમિયમ ગ્રેડિયન્ટ મેટ્રિક કાર્ડ્સ */
+    [data-testid="stMetric"] {
+        background: #ffffff;
+        padding: 20px 24px;
+        border-radius: 16px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
         border: 1px solid #e2e8f0;
-        border-radius: 10px;
-        padding: 16px;
-        margin-bottom: 12px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        border-top: 4px solid #2563eb;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
+    [data-testid="stMetric"]:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 14px 28px -4px rgba(37, 99, 235, 0.12);
+    }
+    [data-testid="stMetricValue"] {
+        font-family: 'Poppins', sans-serif !important;
+        font-weight: 700 !important;
+        color: #0f172a !important;
+    }
+
+    /* રીમાઇન્ડર કાર્ડ લુક */
+    .reminder-card {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 14px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+        transition: all 0.2s ease;
+    }
+    .reminder-card:hover {
+        border-color: #93c5fd;
+        box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08);
+    }
+
+    /* સ્ટેટસ બેજ */
     .badge-urgent {
-        background-color: #fee2e2;
-        color: #991b1b;
-        padding: 4px 8px;
-        border-radius: 6px;
+        background: #fee2e2;
+        color: #b91c1c;
+        padding: 6px 12px;
+        border-radius: 9999px;
         font-weight: 600;
         font-size: 12px;
+        letter-spacing: 0.3px;
+        border: 1px solid #fca5a5;
     }
     .badge-warning {
-        background-color: #fef3c7;
-        color: #92400e;
-        padding: 4px 8px;
-        border-radius: 6px;
+        background: #fef3c7;
+        color: #b45309;
+        padding: 6px 12px;
+        border-radius: 9999px;
         font-weight: 600;
         font-size: 12px;
+        letter-spacing: 0.3px;
+        border: 1px solid #fde68a;
+    }
+
+    /* બટન્સ સ્ટાઇલિંગ */
+    .stButton>button, .stLinkButton>a {
+        border-radius: 10px !important;
+        font-family: 'Poppins', sans-serif !important;
+        font-weight: 500 !important;
+        padding: 8px 18px !important;
+        transition: all 0.2s ease !important;
+    }
+    .stButton>button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+    }
+
+    /* સાઇડબાર ડિઝાઇન */
+    [data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #e2e8f0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -133,33 +194,35 @@ with st.sidebar:
     elif os.path.exists("logo.jpg"):
         st.image("logo.jpg", use_container_width=True)
     else:
-        st.markdown("## 🛡️ હરિ ઓમ ઇન્સ્યોરન્સ")
+        st.markdown("<h2 style='text-align:center; color:#1e3a8a;'>🛡️ HARI OM</h2>", unsafe_allow_html=True)
 
-    st.markdown("### 📌 નેવિગેશન મેનૂ")
+    st.markdown("<p style='font-size:12px; color:#64748b; font-weight:600; text-transform:uppercase; margin-top:15px;'>મેઇન મેનૂ</p>", unsafe_allow_html=True)
     menu_choice = st.radio(
-        "મેનૂ પસંદ કરો:",
+        "",
         [
             "📊 ડેશબોર્ડ", 
             "🔔 રીમાઇન્ડર ડેસ્ક", 
             "➕ નવી પોલિસી એન્ટ્રી", 
-            "📁 તમામ ગ્રાહકોની યાદી", 
+            "📁 ગ્રાહક ડિરેક્ટરી", 
             "⚙️ એડિટ / ડિલીટ",
-            "💾 ડેટા બેકઅપ & રિસ્ટોર"
+            "💾 બેકઅપ & રિસ્ટોર"
         ],
         index=0
     )
     
     st.markdown("---")
     st.markdown("""
-    **સંપર્ક:**  
-    📍 F-46, વાત્સલ્ય સ્ટેટસ, ધવલ પ્લાઝા પાસે, કડી - 384440  
-    📞 7698564672  
-    📞 9714776364  
-    """)
+    <div style='background:#f8fafc; padding:12px; border-radius:10px; border:1px solid #e2e8f0; font-size:12px; color:#475569;'>
+        <b>📍 સરનામું:</b> F-46, વાત્સલ્ય સ્ટેટસ, ધવલ પ્લાઝા પાસે, કડી - 384440<br>
+        <b>📞 હેલ્પલાઇન:</b> 7698564672 / 9714776364
+    </div>
+    """, unsafe_allow_html=True)
 
 # ----------------- 1. ડેશબોર્ડ -----------------
 if menu_choice == "📊 ડેશબોર્ડ":
-    st.title("📊 બિઝનેસ ડેશબોર્ડ")
+    st.markdown("<h2 style='color:#0f172a;'>📊 બિઝનેસ ડેશબોર્ડ</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#64748b; font-size:14px;'>તમારી પોલિસીઓ અને રિન્યુઅલનું લાઈવ એનાલિટિક્સ</p>", unsafe_allow_html=True)
+    
     if not df.empty:
         df_dash = df.copy()
         df_dash["expiry_dt"] = pd.to_datetime(df_dash["expiry_date"], errors="coerce").dt.date
@@ -174,16 +237,16 @@ if menu_choice == "📊 ડેશબોર્ડ":
         active = valid[days > 15]
         
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("👥 કુલ ગ્રાહકો", len(df))
-        c2.metric("⚠️ ૧૫ દિવસમાં એક્સપાયર", len(due_15))
+        c1.metric("👥 કુલ પોલિસી", len(df))
+        c2.metric("⚠️ ૧૫ દિવસમાં બાકી", len(due_15))
         c3.metric("✅ એક્ટિવ પોલિસી", len(active))
-        c4.metric("💰 કુલ પ્રીમિયમ રકમ", f"₹{df_dash['premium_clean'].sum():,.0f}")
+        c4.metric("💰 કુલ પ્રીમિયમ", f"₹{df_dash['premium_clean'].sum():,.0f}")
     else:
         st.info("ડેશબોર્ડ પર ડેટા જોવા માટે નવી પોલિસી ઉમેરો.")
 
 # ----------------- 2. રીમાઇન્ડર ડેસ્ક -----------------
 elif menu_choice == "🔔 રીમાઇન્ડર ડેસ્ક":
-    st.title("🔔 પોલિસી રિન્યુઅલ રીમાઇન્ડર સેન્ટર")
+    st.markdown("<h2 style='color:#0f172a;'>🔔 પોલિસી રિન્યુઅલ રીમાઇન્ડર</h2>", unsafe_allow_html=True)
     
     filter_col, template_col = st.columns(2)
     with filter_col:
@@ -237,11 +300,11 @@ elif menu_choice == "🔔 રીમાઇન્ડર ડેસ્ક":
                 st.markdown(f"""
                 <div class="reminder-card">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <h4 style="margin:0; color:#0f172a;">{row['name']} ({row['vehicle_no']})</h4>
+                        <h4 style="margin:0; color:#1e293b; font-size:16px;">{row['name']} <span style="color:#64748b; font-weight:400;">({row['vehicle_no']})</span></h4>
                         {badge}
                     </div>
-                    <p style="margin:6px 0 0 0; font-size:13px; color:#475569;">
-                        <b>પ્રકાર:</b> {row['vehicle_type']} | <b>કંપની:</b> {row['policy_company']} | <b>પોલિસી નં:</b> {row['policy_no']} | <b>એક્સપાયરી:</b> {row['expiry_date']}
+                    <p style="margin:8px 0 0 0; font-size:13px; color:#475569;">
+                        <b>વાહન:</b> {row['vehicle_type']} | <b>કંપની:</b> {row['policy_company']} | <b>પોલિસી નં:</b> {row['policy_no']} | <b>એક્સપાયરી:</b> {row['expiry_date']}
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -250,11 +313,11 @@ elif menu_choice == "🔔 રીમાઇન્ડર ડેસ્ક":
                 with b1:
                     st.link_button("📲 WhatsApp મોકલો", wa_url)
                 with b2:
-                    if st.button(f"⚡ ૧-ક્લિક રિન્યુ (૧ વર્ષ ઉમેરો)", key=f"ren_{row['id']}"):
+                    if st.button(f"⚡ ૧-ક્લિક રિન્યુ (૧ વર્ષ)", key=f"ren_{row['id']}"):
                         renew_one_year(row['id'], row['expiry_date'])
-                        st.success("પોલિસી ૧ વર્ષ માટે રિન્યુ થઈ ગઈ!")
+                        st.success("પોલિસી સફળતાપૂર્વક ૧ વર્ષ માટે રિન્યુ થઈ ગઈ!")
                         st.rerun()
-                st.divider()
+                st.markdown("<hr style='margin:10px 0; border-color:#e2e8f0;'>", unsafe_allow_html=True)
         else:
             st.success("આ સમયગાળામાં કોઈ પોલિસી એક્સપાયર થતી નથી.")
     else:
@@ -262,7 +325,7 @@ elif menu_choice == "🔔 રીમાઇન્ડર ડેસ્ક":
 
 # ----------------- 3. નવી એન્ટ્રી -----------------
 elif menu_choice == "➕ નવી પોલિસી એન્ટ્રી":
-    st.title("➕ નવો ગ્રાહક અને પોલિસી ઉમેરો")
+    st.markdown("<h2 style='color:#0f172a;'>➕ નવી પોલિસી ઉમેરો</h2>", unsafe_allow_html=True)
     with st.form("new_entry_form", clear_on_submit=True):
         c_a, c_b = st.columns(2)
         name = c_a.text_input("ગ્રાહકનું પૂરું નામ *")
@@ -288,16 +351,16 @@ elif menu_choice == "➕ નવી પોલિસી એન્ટ્રી":
                     str(expiry),
                     remarks.strip()
                 )
-                st.success("✅ ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો અને ડેટાબેઝમાં સેવ થઈ ગયો!")
+                st.success("✅ નવો ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો!")
                 st.rerun()
             else:
                 st.error("કૃપા કરીને નામ, મોબાઇલ અને વાહન નંબર ભરો.")
 
 # ----------------- 4. તમામ ગ્રાહકોની યાદી -----------------
-elif menu_choice == "📁 તમામ ગ્રાહકોની યાદી":
-    st.title("📁 ગ્રાહક ડિરેક્ટરી")
+elif menu_choice == "📁 ગ્રાહક ડિરેક્ટરી":
+    st.markdown("<h2 style='color:#0f172a;'>📁 તમામ ગ્રાહકોની યાદી</h2>", unsafe_allow_html=True)
     if not df.empty:
-        sq = st.text_input("🔍 સર્ચ કરો (નામ, વાહન નંબર કે મોબાઇલ):")
+        sq = st.text_input("🔍 સર્ચ ફિલ્ટર (નામ, વાહન નંબર કે મોબાઇલ):")
         vdf = df.copy()
         if sq:
             q = sq.lower()
@@ -314,7 +377,7 @@ elif menu_choice == "📁 તમામ ગ્રાહકોની યાદી"
 
 # ----------------- 5. એડિટ / ડિલીટ -----------------
 elif menu_choice == "⚙️ એડિટ / ડિલીટ":
-    st.title("⚙️ ગ્રાહક ડેટા સુધારો અથવા રદ કરો")
+    st.markdown("<h2 style='color:#0f172a;'>⚙️ ગ્રાહક ડેટા સુધારો અથવા રદ કરો</h2>", unsafe_allow_html=True)
     if not df.empty:
         opts = {f"{r['id']}: {r['name']} - {r['vehicle_no']}": r['id'] for _, r in df.iterrows()}
         sel_label = st.selectbox("ગ્રાહક પસંદ કરો:", list(opts.keys()))
@@ -346,7 +409,7 @@ elif menu_choice == "⚙️ એડિટ / ડિલીટ":
                 erem = st.text_input("નોંધ", value=str(s_row['remarks']))
                 
                 ub1, ub2 = st.columns(2)
-                if ub1.form_submit_button("🔄 અપડેટ કરો"):
+                if ub1.form_submit_button("🔄 વિગતો અપડેટ કરો"):
                     update_policy(p_id, en.strip(), em.strip(), ev.upper().strip(), et, ec.strip(), ep.strip(), eprem, str(eexp), erem.strip())
                     st.success("વિગતો અપડેટ થઈ ગઈ!")
                     st.rerun()
@@ -358,15 +421,15 @@ elif menu_choice == "⚙️ એડિટ / ડિલીટ":
         st.info("ડેટાબેઝ ખાલી છે.")
 
 # ----------------- 6. બેકઅપ અને રિસ્ટોર -----------------
-elif menu_choice == "💾 ડેટા બેકઅપ & રિસ્ટોર":
-    st.title("💾 ડેટા બેકઅપ અને રિસ્ટોર સેન્ટર")
+elif menu_choice == "💾 બેકઅપ & રિસ્ટોર":
+    st.markdown("<h2 style='color:#0f172a;'>💾 ડેટા બેકઅપ અને રિસ્ટોર</h2>", unsafe_allow_html=True)
     bk1, bk2 = st.columns(2)
     with bk1:
         st.markdown("### 📥 ડાઉનલોડ બેકઅપ")
         st.write("હાલના તમામ ગ્રાહકોની CSV બેકઅપ ફાઈલ ડાઉનલોડ કરો.")
         if not df.empty:
             bk_csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("⬇️ સંપૂર્ણ ડેટાબેઝ ડાઉનલોડ (CSV)", data=bk_csv, file_name=f"hari_om_backup_{date.today()}.csv", mime="text/csv")
+            st.download_button("⬇️ ડેટાબેઝ ડાઉનલોડ (CSV)", data=bk_csv, file_name=f"hari_om_backup_{date.today()}.csv", mime="text/csv")
         else:
             st.info("બેકઅપ લેવા માટે ડેટાબેઝમાં કોઈ એન્ટ્રી નથી.")
     with bk2:
