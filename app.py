@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, date, timedelta
 import os
 import urllib.parse
+from streamlit_gsheets import GSheetsConnection
 
 # પેજ કન્ફિગરેશન
 st.set_page_config(
@@ -12,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# કસ્ટમ મોર્ડન CSS થીમ
+# કસ્ટમ CSS સ્ટાઇલિંગ
 st.markdown("""
 <style>
     .main { background-color: #f8fafc; }
@@ -34,7 +35,7 @@ st.markdown("""
     .badge-urgent {
         background-color: #fee2e2;
         color: #991b1b;
-        padding: 3px 8px;
+        padding: 4px 8px;
         border-radius: 6px;
         font-weight: 600;
         font-size: 12px;
@@ -42,7 +43,7 @@ st.markdown("""
     .badge-warning {
         background-color: #fef3c7;
         color: #92400e;
-        padding: 3px 8px;
+        padding: 4px 8px;
         border-radius: 6px;
         font-weight: 600;
         font-size: 12px;
@@ -50,60 +51,85 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+COLUMNS = [
+    "Name", "Mobile", "Vehicle_No", "Vehicle_Type", 
+    "Policy_Company", "Policy_No", "Premium_Amount", 
+    "Expiry_Date", "Remarks", "Last_Renewed"
+]
+
+# ડેટાબેઝ હેન્ડલર (Google Sheets જો કનેક્ટ હોય તો એમાંથી, નહીંતર Local CSV)
+def get_connection():
+    try:
+        return st.connection("gsheets", type=GSheetsConnection)
+    except Exception:
+        return None
+
+conn = get_connection()
 DB_FILE = "insurance_data.csv"
 
 def load_data():
-    columns = [
-        "Name", "Mobile", "Vehicle_No", "Vehicle_Type", 
-        "Policy_Company", "Policy_No", "Premium_Amount", 
-        "Expiry_Date", "Remarks", "Last_Renewed"
-    ]
+    if conn:
+        try:
+            df = conn.read(ttl=0)
+            for col in COLUMNS:
+                if col not in df.columns:
+                    df[col] = ""
+            return df[COLUMNS].dropna(how="all")
+        except Exception:
+            pass
+    
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE)
-        for col in columns:
+        for col in COLUMNS:
             if col not in df.columns:
                 df[col] = ""
-        return df[columns]
-    return pd.DataFrame(columns=columns)
+        return df[COLUMNS]
+    return pd.DataFrame(columns=COLUMNS)
 
 def save_data(df):
+    if conn:
+        try:
+            conn.update(data=df)
+        except Exception:
+            pass
     df.to_csv(DB_FILE, index=False)
 
 df = load_data()
 
-# ટોપ હેડર બ્રાન્ડિંગ
-head_c1, head_c2 = st.columns([1, 4])
-with head_c1:
+# ----------------- SIDEBAR NAVIGATION MENU -----------------
+with st.sidebar:
     if os.path.exists("HARI OM IL.jpg"):
         st.image("HARI OM IL.jpg", use_container_width=True)
     elif os.path.exists("logo.jpg"):
         st.image("logo.jpg", use_container_width=True)
     else:
-        st.markdown("<h1 style='text-align:center;'>🛡️</h1>", unsafe_allow_html=True)
+        st.markdown("## 🛡️ હરિ ઓમ ઇન્સ્યોરન્સ")
 
-with head_c2:
+    st.markdown("### 📌 નેવિગેશન મેનૂ")
+    menu_choice = st.radio(
+        "મેનૂ પસંદ કરો:",
+        [
+            "📊 ડેશબોર્ડ", 
+            "🔔 રીમાઇન્ડર ડેસ્ક", 
+            "➕ નવી પોલિસી એન્ટ્રી", 
+            "📁 તમામ ગ્રાહકોની યાદી", 
+            "⚙️ એડિટ / ડિલીટ",
+            "💾 ડેટા બેકઅપ & સેટિંગ્સ"
+        ],
+        index=0
+    )
+    
+    st.markdown("---")
     st.markdown("""
-    <div style='padding-top: 5px;'>
-        <h2 style='margin:0; color:#1E3A8A;'>હરિ ઓમ ઇન્સ્યોરન્સ & લોન એડવાઈઝર</h2>
-        <p style='margin:2px 0; color:#475569; font-size:14px;'>📍 F-46, વાત્સલ્ય સ્ટેટસ, ધવલ પ્લાઝા પાસે, કડી - 384440 | 📞 <b>7698564672 / 9714776364</b></p>
-    </div>
-    """, unsafe_allow_html=True)
+    **સંપર્ક સહાય:**  
+    📍 કડી - 384440  
+    📞 7698564672  
+    📞 9714776364  
+    """)
 
-st.markdown("---")
-
-# મુખ્ય ટેબ્સ
-t1, t2, t3, t4, t5, t6 = st.tabs([
-    "📊 ડેશબોર્ડ",
-    "🔔 રીમાઇન્ડર ડેસ્ક",
-    "➕ નવી એન્ટ્રી",
-    "📁 ગ્રાહક ડિરેક્ટરી",
-    "⚙️ મેનેજ (Edit/Delete)",
-    "💾 બેકઅપ & રિસ્ટોર"
-])
-
-# ----------------- TAB 1: ડેશબોર્ડ -----------------
-with t1:
-    st.subheader("📊 બિઝનેસ પર્ફોમન્સ ડેશબોર્ડ")
+# ----------------- 1. ડેશબોર્ડ -----------------
+if menu_choice == "📊 ડેશબોર્ડ":
+    st.title("📊 બિઝનેસ ડેશબોર્ડ")
     if not df.empty:
         df_dash = df.copy()
         df_dash["Expiry_Date_dt"] = pd.to_datetime(df_dash["Expiry_Date"], errors="coerce").dt.date
@@ -118,22 +144,22 @@ with t1:
         active = valid[days > 15]
         
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("👥 કુલ પોલિસીઓ", len(df))
+        c1.metric("👥 કુલ ગ્રાહકો", len(df))
         c2.metric("⚠️ ૧૫ દિવસમાં એક્સપાયર", len(due_15))
-        c3.metric("✅ એક્ટિવ પોલિસીઓ", len(active))
-        c4.metric("💰 કુલ પ્રીમિયમ પોર્ટફોલિયો", f"₹{df_dash['Premium_Clean'].sum():,.0f}")
+        c3.metric("✅ એક્ટિવ પોલિસી", len(active))
+        c4.metric("💰 કુલ પ્રીમિયમ રકમ", f"₹{df_dash['Premium_Clean'].sum():,.0f}")
     else:
-        st.info("ડેશબોર્ડ જોવા માટે નવી પોલિસી ઉમેરો.")
+        st.info("ડેશબોર્ડ પર ડેટા જોવા માટે નવી પોલિસી ઉમેરો.")
 
-# ----------------- TAB 2: રીમાઇન્ડર ડેસ્ક -----------------
-with t2:
-    st.subheader("🔔 પોલિસી રિન્યુઅલ રીમાઇન્ડર સેન્ટર")
+# ----------------- 2. રીમાઇન્ડર ડેસ્ક -----------------
+elif menu_choice == "🔔 રીમાઇન્ડર ડેસ્ક":
+    st.title("🔔 પોલિસી રિન્યુઅલ રીમાઇન્ડર સેન્ટર")
     
-    filter_col, template_col = st.columns([1, 1])
+    filter_col, template_col = st.columns(2)
     with filter_col:
-        filter_mode = st.selectbox("કાળાવધી પસંદ કરો:", ["આગામી ૧૫ દિવસ", "આગામી ૭ દિવસ", "આગામી ૩ દિવસ", "આજે એક્સપાયર થતી"])
+        filter_mode = st.selectbox("સમયગાળો પસંદ કરો:", ["આગામી ૧૫ દિવસ", "આગામી ૭ દિવસ", "આગામી ૩ દિવસ", "આજે એક્સપાયર થતી"])
     with template_col:
-        msg_style = st.selectbox("WhatsApp મેસેજ ટેમ્પલેટ:", ["સ્ટાન્ડર્ડ વિગતવાર મેસેજ", "અર્જન્ટ / લાસ્ટ રીમાઇન્ડર", "ટૂંકો મેસેજ"])
+        msg_style = st.selectbox("WhatsApp મેસેજ પ્રકાર:", ["સ્ટાન્ડર્ડ વિગતવાર મેસેજ", "અર્જન્ટ / લાસ્ટ રીમાઇન્ડર", "ટૂંકો મેસેજ"])
 
     days_limit = 15
     if "૭" in filter_mode: days_limit = 7
@@ -153,26 +179,23 @@ with t2:
             for idx, row in reminders.iterrows():
                 badge = f"<span class='badge-urgent'>🚨 {row['Days_Left']} દિવસ બાકી</span>" if row['Days_Left'] <= 3 else f"<span class='badge-warning'>⏳ {row['Days_Left']} દિવસ બાકી</span>"
                 
-                # મેસેજ ટેમ્પલેટ લોજિક
                 if msg_style == "અર્જન્ટ / લાસ્ટ રીમાઇન્ડર":
                     msg = (
                         f"🚨 *અર્જન્ટ રિન્યુઅલ એલર્ટ* 🚨\n\n"
                         f"નમસ્તે {row['Name']}જી,\n"
-                        f"આપના વાહન *{row['Vehicle_No']}* ના ઇન્સ્યોરન્સની મુદત *{row['Expiry_Date']}* ના રોજ પૂરી થાય છે ({row['Days_Left']} દિવસ બાકી).\n"
+                        f"આપના વાહન *{row['Vehicle_No']}* ના ઇન્સ્યોરન્સની મુદત *{row['Expiry_Date']}* ના રોજ પૂર્ણ થાય છે ({row['Days_Left']} દિવસ બાકી).\n"
                         f"પોલિસી લેપ્સ થયા વગર તાત્કાલિક રિન્યુ કરાવવા વિનંતી.\n\n"
                         f"📞 *હરિ ઓમ ઇન્સ્યોરન્સ, કડી:* 7698564672 / 9714776364"
                     )
                 elif msg_style == "ટૂંકો મેસેજ":
-                    msg = (
-                        f"નમસ્તે {row['Name']}જી, આપના વાહન *{row['Vehicle_No']}* ની પોલિસી તારીખ {row['Expiry_Date']} એ એક્સપાયર થાય છે. રિન્યુઅલ માટે સંપર્ક કરો: હરિ ઓમ ઇન્સ્યોરન્સ (Mo: 7698564672)."
-                    )
+                    msg = f"નમસ્તે {row['Name']}જી, વાહન *{row['Vehicle_No']}* ની પોલિસી તારીખ {row['Expiry_Date']} એ પૂર્ણ થાય છે. રિન્યુઅલ માટે સંપર્ક કરો: હરિ ઓમ ઇન્સ્યોરન્સ (Mo: 7698564672)."
                 else:
                     msg = (
                         f"નમસ્તે {row['Name']}જી,\n\n"
                         f"હરિ ઓમ ઇન્સ્યોરન્સ તરફથી યાદી કે આપના વાહન નંબર *{row['Vehicle_No']}* ના ઇન્સ્યોરન્સની મુદત તારીખ *{row['Expiry_Date']}* ના રોજ પૂર્ણ થઈ રહી છે ({row['Days_Left']} દિવસ બાકી).\n\n"
                         f"📄 *પોલિસી નંબર:* {row['Policy_No']}\n"
                         f"🏢 *કંપની:* {row['Policy_Company']}\n\n"
-                        f"સમયસર રિન્યુ કરાવવા માટે સંપર્ક કરો.\n"
+                        f"સમયસર રિન્યુ કરાવવા વિનંતી.\n"
                         f"📞 7698564672 / 9714776364\n"
                         f"*હરિ ઓમ ઇન્સ્યોરન્સ & લોન એડવાઈઝર, કડી*"
                     )
@@ -203,17 +226,17 @@ with t2:
                         df.at[idx, "Expiry_Date"] = str(new_exp)
                         df.at[idx, "Last_Renewed"] = str(date.today())
                         save_data(df)
-                        st.success(f"પોલિસી સફળતાપૂર્વક {new_exp} સુધી રિન્યુ થઈ ગઈ!")
+                        st.success(f"પોલિસી તારીખ {new_exp} સુધી રિન્યુ થઈ ગઈ!")
                         st.rerun()
                 st.divider()
         else:
-            st.success("પસંદ કરેલ સમયગાળામાં કોઈ પોલિસી એક્સપાયર થતી નથી.")
+            st.success("આ સમયગાળામાં કોઈ પોલિસી એક્સપાયર થતી નથી.")
     else:
-        st.info("કોઈ ડેટા નથી.")
+        st.info("કોઈ ડેટા ઉપલબ્ધ નથી.")
 
-# ----------------- TAB 3: નવી એન્ટ્રી -----------------
-with t3:
-    st.subheader("➕ નવો ગ્રાહક અને પોલિસી રજીસ્ટર કરો")
+# ----------------- 3. નવી એન્ટ્રી -----------------
+elif menu_choice == "➕ નવી પોલિસી એન્ટ્રી":
+    st.title("➕ નવો ગ્રાહક અને પોલિસી ઉમેરો")
     with st.form("new_entry_form", clear_on_submit=True):
         c_a, c_b = st.columns(2)
         name = c_a.text_input("ગ્રાહકનું પૂરું નામ *")
@@ -224,7 +247,7 @@ with t3:
         policy_no = c_b.text_input("પોલિસી નંબર")
         premium = c_a.number_input("પ્રીમિયમ રકમ (₹)", min_value=0, step=500)
         expiry = c_b.date_input("પોલિસી એક્સપાયરી તારીખ *")
-        remarks = st.text_input("નોંધ / એડવાન્સ વિગત")
+        remarks = st.text_input("નોંધ / રિમાર્ક્સ")
         
         if st.form_submit_button("💾 પોલિસી સેવ કરો"):
             if name.strip() and mobile.strip() and vehicle_no.strip():
@@ -242,16 +265,16 @@ with t3:
                 }
                 df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                 save_data(df)
-                st.success("ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો!")
+                st.success("✅ ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો અને ડેટા ઓટો-સેવ થઈ ગયો!")
                 st.rerun()
             else:
-                st.error("નામ, મોબાઇલ અને વાહન નંબર જરૂરી છે.")
+                st.error("કૃપા કરીને નામ, મોબાઇલ અને વાહન નંબર ભરો.")
 
-# ----------------- TAB 4: ગ્રાહક ડિરેક્ટરી -----------------
-with t4:
-    st.subheader("📁 તમામ ગ્રાહકોની ડિરેક્ટરી")
+# ----------------- 4. તમામ ગ્રાહકોની યાદી -----------------
+elif menu_choice == "📁 તમામ ગ્રાહકોની યાદી":
+    st.title("📁 ગ્રાહક ડિરેક્ટરી")
     if not df.empty:
-        sq = st.text_input("🔍 સર્ચ (નામ, વાહન નંબર કે મોબાઇલ):")
+        sq = st.text_input("🔍 સર્ચ કરો (નામ, વાહન નંબર કે મોબાઇલ):")
         vdf = df.copy()
         if sq:
             q = sq.lower()
@@ -264,11 +287,11 @@ with t4:
         csv_exp = vdf.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Excel / CSV માં ડાઉનલોડ કરો", data=csv_exp, file_name="HariOm_Clients.csv", mime="text/csv")
     else:
-        st.info("કોઈ ગ્રાહક મળ્યો નથી.")
+        st.info("કોઈ ગ્રાહકનો ડેટા નથી.")
 
-# ----------------- TAB 5: મેનેજ (Edit / Delete) -----------------
-with t5:
-    st.subheader("⚙️ ગ્રાહક ડેટા સુધારો અથવા રદ કરો")
+# ----------------- 5. એડિટ / ડિલીટ -----------------
+elif menu_choice == "⚙️ એડિટ / ડિલીટ":
+    st.title("⚙️ ગ્રાહક ડેટા સુધારો અથવા રદ કરો")
     if not df.empty:
         opts = [f"{i}: {r['Name']} - {r['Vehicle_No']}" for i, r in df.iterrows()]
         sel = st.selectbox("ગ્રાહક પસંદ કરો:", opts)
@@ -316,23 +339,27 @@ with t5:
     else:
         st.info("ડેટાબેઝ ખાલી છે.")
 
-# ----------------- TAB 6: બેકઅપ & રિસ્ટોર -----------------
-with t6:
-    st.subheader("💾 ડેટા સુરક્ષા અને બેકઅપ")
+# ----------------- 6. બેકઅપ અને સેટિંગ્સ -----------------
+elif menu_choice == "💾 ડેટા બેકઅપ & સેટિંગ્સ":
+    st.title("💾 ડેટા ઓટોમેશન & બેકઅપ")
+    st.markdown("""
+    💡 **લાઈવ ગૂગલ શીટ કનેક્શન:**  
+    જો તમે Google Sheets કનેક્ટ કરશો, તો તમારે ક્યારેય મેન્યુઅલ બેકઅપ લેવું નહીં પડે કે ફાઈલ અપલોડ કરવી નહીં પડે. બધી એન્ટ્રી સીધી Google Sheets માં ક્લાઉડ પર સુરક્ષિત રહેશે.
+    """)
     bk1, bk2 = st.columns(2)
     with bk1:
-        st.markdown("### 📥 ડાઉનલોડ બેકઅપ")
+        st.markdown("### 📥 ડાઉનલોડ ઑફલાઇન બેકઅપ")
         if not df.empty:
             bk_csv = df.to_csv(index=False).encode('utf-8')
             st.download_button("⬇️ સંપૂર્ણ ડેટાબેઝ ડાઉનલોડ (CSV)", data=bk_csv, file_name=f"hari_om_backup_{date.today()}.csv", mime="text/csv")
     with bk2:
-        st.markdown("### 📤 રિસ્ટોર ડેટા")
+        st.markdown("### 📤 CSV ફાઇલ રિસ્ટોર કરો")
         up_file = st.file_uploader("CSV બેકઅપ અપલોડ કરો", type=["csv"])
         if up_file and st.button("🚀 ડેટા રિસ્ટોર કરો"):
             try:
                 new_df = pd.read_csv(up_file)
                 save_data(new_df)
-                st.success("ડેટા રિસ્ટોર થઈ ગયો!")
+                st.success("ડેટા સફળતાપૂર્વક રિસ્ટોર થઈ ગયો!")
                 st.rerun()
             except Exception as err:
                 st.error(f"એરર: {err}")
