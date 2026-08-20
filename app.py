@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
-import os
+import sqlite3
 import urllib.parse
-from streamlit_gsheets import GSheetsConnection
+import os
 
 # પેજ કન્ફિગરેશન
 st.set_page_config(
@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# કસ્ટમ CSS સ્ટાઇલિંગ
+# CSS સ્ટાઇલિંગ
 st.markdown("""
 <style>
     .main { background-color: #f8fafc; }
@@ -51,52 +51,82 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-COLUMNS = [
-    "Name", "Mobile", "Vehicle_No", "Vehicle_Type", 
-    "Policy_Company", "Policy_No", "Premium_Amount", 
-    "Expiry_Date", "Remarks", "Last_Renewed"
-]
+# ----------------- SQLite ડેટાબેઝ સેટઅપ -----------------
+DB_FILE = "insurance_master.db"
 
-# ડેટાબેઝ હેન્ડલર (Google Sheets જો કનેક્ટ હોય તો એમાંથી, નહીંતર Local CSV)
-def get_connection():
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS policies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            mobile TEXT,
+            vehicle_no TEXT,
+            vehicle_type TEXT,
+            policy_company TEXT,
+            policy_no TEXT,
+            premium_amount REAL,
+            expiry_date TEXT,
+            remarks TEXT,
+            last_renewed TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def get_data():
+    conn = sqlite3.connect(DB_FILE)
+    df = pd.read_sql_query("SELECT * FROM policies", conn)
+    conn.close()
+    return df
+
+def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO policies (name, mobile, vehicle_no, vehicle_type, policy_company, policy_no, premium_amount, expiry_date, remarks, last_renewed)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks, str(date.today())))
+    conn.commit()
+    conn.close()
+
+def update_policy(p_id, name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        UPDATE policies 
+        SET name=?, mobile=?, vehicle_no=?, vehicle_type=?, policy_company=?, policy_no=?, premium_amount=?, expiry_date=?, remarks=?
+        WHERE id=?
+    ''', (name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks, p_id))
+    conn.commit()
+    conn.close()
+
+def delete_policy(p_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('DELETE FROM policies WHERE id=?', (p_id,))
+    conn.commit()
+    conn.close()
+
+def renew_one_year(p_id, current_expiry_str):
     try:
-        return st.connection("gsheets", type=GSheetsConnection)
+        curr_dt = datetime.strptime(str(current_expiry_str), "%Y-%m-%d").date()
     except Exception:
-        return None
-
-conn = get_connection()
-DB_FILE = "insurance_data.csv"
-
-def load_data():
-    if conn:
-        try:
-            df = conn.read(ttl=0)
-            for col in COLUMNS:
-                if col not in df.columns:
-                    df[col] = ""
-            return df[COLUMNS].dropna(how="all")
-        except Exception:
-            pass
+        curr_dt = date.today()
+    new_dt = str(curr_dt + timedelta(days=365))
     
-    if os.path.exists(DB_FILE):
-        df = pd.read_csv(DB_FILE)
-        for col in COLUMNS:
-            if col not in df.columns:
-                df[col] = ""
-        return df[COLUMNS]
-    return pd.DataFrame(columns=COLUMNS)
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('UPDATE policies SET expiry_date=?, last_renewed=? WHERE id=?', (new_dt, str(date.today()), p_id))
+    conn.commit()
+    conn.close()
 
-def save_data(df):
-    if conn:
-        try:
-            conn.update(data=df)
-        except Exception:
-            pass
-    df.to_csv(DB_FILE, index=False)
+df = get_data()
 
-df = load_data()
-
-# ----------------- SIDEBAR NAVIGATION MENU -----------------
+# ----------------- સાઇડબાર નેવિગેશન -----------------
 with st.sidebar:
     if os.path.exists("HARI OM IL.jpg"):
         st.image("HARI OM IL.jpg", use_container_width=True)
@@ -114,15 +144,15 @@ with st.sidebar:
             "➕ નવી પોલિસી એન્ટ્રી", 
             "📁 તમામ ગ્રાહકોની યાદી", 
             "⚙️ એડિટ / ડિલીટ",
-            "💾 ડેટા બેકઅપ & સેટિંગ્સ"
+            "💾 ડેટા બેકઅપ & રિસ્ટોર"
         ],
         index=0
     )
     
     st.markdown("---")
     st.markdown("""
-    **સંપર્ક સહાય:**  
-    📍 કડી - 384440  
+    **સંપર્ક:**  
+    📍 F-46, વાત્સલ્ય સ્ટેટસ, ધવલ પ્લાઝા પાસે, કડી - 384440  
     📞 7698564672  
     📞 9714776364  
     """)
@@ -132,12 +162,12 @@ if menu_choice == "📊 ડેશબોર્ડ":
     st.title("📊 બિઝનેસ ડેશબોર્ડ")
     if not df.empty:
         df_dash = df.copy()
-        df_dash["Expiry_Date_dt"] = pd.to_datetime(df_dash["Expiry_Date"], errors="coerce").dt.date
-        df_dash["Premium_Clean"] = pd.to_numeric(df_dash["Premium_Amount"], errors="coerce").fillna(0)
+        df_dash["expiry_dt"] = pd.to_datetime(df_dash["expiry_date"], errors="coerce").dt.date
+        df_dash["premium_clean"] = pd.to_numeric(df_dash["premium_amount"], errors="coerce").fillna(0)
         today = date.today()
         
-        valid = df_dash.dropna(subset=["Expiry_Date_dt"])
-        days = valid["Expiry_Date_dt"].apply(lambda x: (x - today).days)
+        valid = df_dash.dropna(subset=["expiry_dt"])
+        days = valid["expiry_dt"].apply(lambda x: (x - today).days)
         
         due_15 = valid[(days <= 15) & (days >= 0)]
         expired = valid[days < 0]
@@ -147,7 +177,7 @@ if menu_choice == "📊 ડેશબોર્ડ":
         c1.metric("👥 કુલ ગ્રાહકો", len(df))
         c2.metric("⚠️ ૧૫ દિવસમાં એક્સપાયર", len(due_15))
         c3.metric("✅ એક્ટિવ પોલિસી", len(active))
-        c4.metric("💰 કુલ પ્રીમિયમ રકમ", f"₹{df_dash['Premium_Clean'].sum():,.0f}")
+        c4.metric("💰 કુલ પ્રીમિયમ રકમ", f"₹{df_dash['premium_clean'].sum():,.0f}")
     else:
         st.info("ડેશબોર્ડ પર ડેટા જોવા માટે નવી પોલિસી ઉમેરો.")
 
@@ -168,50 +198,50 @@ elif menu_choice == "🔔 રીમાઇન્ડર ડેસ્ક":
 
     if not df.empty:
         df_rem = df.copy()
-        df_rem["Expiry_Date_dt"] = pd.to_datetime(df_rem["Expiry_Date"], errors="coerce").dt.date
+        df_rem["expiry_dt"] = pd.to_datetime(df_rem["expiry_date"], errors="coerce").dt.date
         today = date.today()
-        df_rem = df_rem.dropna(subset=["Expiry_Date_dt"])
-        df_rem["Days_Left"] = df_rem["Expiry_Date_dt"].apply(lambda x: (x - today).days)
+        df_rem = df_rem.dropna(subset=["expiry_dt"])
+        df_rem["days_left"] = df_rem["expiry_dt"].apply(lambda x: (x - today).days)
         
-        reminders = df_rem[(df_rem["Days_Left"] <= days_limit) & (df_rem["Days_Left"] >= 0)].sort_values(by="Days_Left")
+        reminders = df_rem[(df_rem["days_left"] <= days_limit) & (df_rem["days_left"] >= 0)].sort_values(by="days_left")
         
         if not reminders.empty:
-            for idx, row in reminders.iterrows():
-                badge = f"<span class='badge-urgent'>🚨 {row['Days_Left']} દિવસ બાકી</span>" if row['Days_Left'] <= 3 else f"<span class='badge-warning'>⏳ {row['Days_Left']} દિવસ બાકી</span>"
+            for _, row in reminders.iterrows():
+                badge = f"<span class='badge-urgent'>🚨 {row['days_left']} દિવસ બાકી</span>" if row['days_left'] <= 3 else f"<span class='badge-warning'>⏳ {row['days_left']} દિવસ બાકી</span>"
                 
                 if msg_style == "અર્જન્ટ / લાસ્ટ રીમાઇન્ડર":
                     msg = (
                         f"🚨 *અર્જન્ટ રિન્યુઅલ એલર્ટ* 🚨\n\n"
-                        f"નમસ્તે {row['Name']}જી,\n"
-                        f"આપના વાહન *{row['Vehicle_No']}* ના ઇન્સ્યોરન્સની મુદત *{row['Expiry_Date']}* ના રોજ પૂર્ણ થાય છે ({row['Days_Left']} દિવસ બાકી).\n"
+                        f"નમસ્તે {row['name']}જી,\n"
+                        f"આપના વાહન *{row['vehicle_no']}* ના ઇન્સ્યોરન્સની મુદત *{row['expiry_date']}* ના રોજ પૂર્ણ થાય છે ({row['days_left']} દિવસ બાકી).\n"
                         f"પોલિસી લેપ્સ થયા વગર તાત્કાલિક રિન્યુ કરાવવા વિનંતી.\n\n"
                         f"📞 *હરિ ઓમ ઇન્સ્યોરન્સ, કડી:* 7698564672 / 9714776364"
                     )
                 elif msg_style == "ટૂંકો મેસેજ":
-                    msg = f"નમસ્તે {row['Name']}જી, વાહન *{row['Vehicle_No']}* ની પોલિસી તારીખ {row['Expiry_Date']} એ પૂર્ણ થાય છે. રિન્યુઅલ માટે સંપર્ક કરો: હરિ ઓમ ઇન્સ્યોરન્સ (Mo: 7698564672)."
+                    msg = f"નમસ્તે {row['name']}જી, વાહન *{row['vehicle_no']}* ની પોલિસી તારીખ {row['expiry_date']} એ પૂર્ણ થાય છે. રિન્યુઅલ માટે સંપર્ક કરો: હરિ ઓમ ઇન્સ્યોરન્સ (Mo: 7698564672)."
                 else:
                     msg = (
-                        f"નમસ્તે {row['Name']}જી,\n\n"
-                        f"હરિ ઓમ ઇન્સ્યોરન્સ તરફથી યાદી કે આપના વાહન નંબર *{row['Vehicle_No']}* ના ઇન્સ્યોરન્સની મુદત તારીખ *{row['Expiry_Date']}* ના રોજ પૂર્ણ થઈ રહી છે ({row['Days_Left']} દિવસ બાકી).\n\n"
-                        f"📄 *પોલિસી નંબર:* {row['Policy_No']}\n"
-                        f"🏢 *કંપની:* {row['Policy_Company']}\n\n"
+                        f"નમસ્તે {row['name']}જી,\n\n"
+                        f"હરિ ઓમ ઇન્સ્યોરન્સ તરફથી યાદી કે આપના વાહન નંબર *{row['vehicle_no']}* ના ઇન્સ્યોરન્સની મુદત તારીખ *{row['expiry_date']}* ના રોજ પૂર્ણ થઈ રહી છે ({row['days_left']} દિવસ બાકી).\n\n"
+                        f"📄 *પોલિસી નંબર:* {row['policy_no']}\n"
+                        f"🏢 *કંપની:* {row['policy_company']}\n\n"
                         f"સમયસર રિન્યુ કરાવવા વિનંતી.\n"
                         f"📞 7698564672 / 9714776364\n"
                         f"*હરિ ઓમ ઇન્સ્યોરન્સ & લોન એડવાઈઝર, કડી*"
                     )
 
                 encoded_msg = urllib.parse.quote(msg)
-                clean_mobile = "".join(filter(str.isdigit, str(row['Mobile'])))[-10:]
+                clean_mobile = "".join(filter(str.isdigit, str(row['mobile'])))[-10:]
                 wa_url = f"https://wa.me/91{clean_mobile}?text={encoded_msg}"
 
                 st.markdown(f"""
                 <div class="reminder-card">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <h4 style="margin:0; color:#0f172a;">{row['Name']} ({row['Vehicle_No']})</h4>
+                        <h4 style="margin:0; color:#0f172a;">{row['name']} ({row['vehicle_no']})</h4>
                         {badge}
                     </div>
                     <p style="margin:6px 0 0 0; font-size:13px; color:#475569;">
-                        <b>પ્રકાર:</b> {row['Vehicle_Type']} | <b>કંપની:</b> {row['Policy_Company']} | <b>પોલિસી નં:</b> {row['Policy_No']} | <b>એક્સપાયરી:</b> {row['Expiry_Date']}
+                        <b>પ્રકાર:</b> {row['vehicle_type']} | <b>કંપની:</b> {row['policy_company']} | <b>પોલિસી નં:</b> {row['policy_no']} | <b>એક્સપાયરી:</b> {row['expiry_date']}
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -220,13 +250,9 @@ elif menu_choice == "🔔 રીમાઇન્ડર ડેસ્ક":
                 with b1:
                     st.link_button("📲 WhatsApp મોકલો", wa_url)
                 with b2:
-                    if st.button(f"⚡ ૧-ક્લિક રિન્યુ (૧ વર્ષ ઉમેરો)", key=f"ren_{idx}"):
-                        curr_exp = pd.to_datetime(row['Expiry_Date']).date()
-                        new_exp = curr_exp + timedelta(days=365)
-                        df.at[idx, "Expiry_Date"] = str(new_exp)
-                        df.at[idx, "Last_Renewed"] = str(date.today())
-                        save_data(df)
-                        st.success(f"પોલિસી તારીખ {new_exp} સુધી રિન્યુ થઈ ગઈ!")
+                    if st.button(f"⚡ ૧-ક્લિક રિન્યુ (૧ વર્ષ ઉમેરો)", key=f"ren_{row['id']}"):
+                        renew_one_year(row['id'], row['expiry_date'])
+                        st.success("પોલિસી ૧ વર્ષ માટે રિન્યુ થઈ ગઈ!")
                         st.rerun()
                 st.divider()
         else:
@@ -251,21 +277,18 @@ elif menu_choice == "➕ નવી પોલિસી એન્ટ્રી":
         
         if st.form_submit_button("💾 પોલિસી સેવ કરો"):
             if name.strip() and mobile.strip() and vehicle_no.strip():
-                new_row = {
-                    "Name": name.strip(),
-                    "Mobile": mobile.strip(),
-                    "Vehicle_No": vehicle_no.upper().strip(),
-                    "Vehicle_Type": vehicle_type,
-                    "Policy_Company": company,
-                    "Policy_No": policy_no.strip(),
-                    "Premium_Amount": premium,
-                    "Expiry_Date": str(expiry),
-                    "Remarks": remarks.strip(),
-                    "Last_Renewed": str(date.today())
-                }
-                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                save_data(df)
-                st.success("✅ ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો અને ડેટા ઓટો-સેવ થઈ ગયો!")
+                insert_policy(
+                    name.strip(),
+                    mobile.strip(),
+                    vehicle_no.upper().strip(),
+                    vehicle_type,
+                    company,
+                    policy_no.strip(),
+                    premium,
+                    str(expiry),
+                    remarks.strip()
+                )
+                st.success("✅ ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો અને ડેટાબેઝમાં સેવ થઈ ગયો!")
                 st.rerun()
             else:
                 st.error("કૃપા કરીને નામ, મોબાઇલ અને વાહન નંબર ભરો.")
@@ -279,9 +302,9 @@ elif menu_choice == "📁 તમામ ગ્રાહકોની યાદી"
         if sq:
             q = sq.lower()
             vdf = vdf[
-                vdf["Name"].astype(str).str.lower().str.contains(q) |
-                vdf["Vehicle_No"].astype(str).str.lower().str.contains(q) |
-                vdf["Mobile"].astype(str).contains(q)
+                vdf["name"].astype(str).str.lower().str.contains(q) |
+                vdf["vehicle_no"].astype(str).str.lower().str.contains(q) |
+                vdf["mobile"].astype(str).contains(q)
             ]
         st.dataframe(vdf, use_container_width=True)
         csv_exp = vdf.to_csv(index=False).encode('utf-8')
@@ -293,73 +316,79 @@ elif menu_choice == "📁 તમામ ગ્રાહકોની યાદી"
 elif menu_choice == "⚙️ એડિટ / ડિલીટ":
     st.title("⚙️ ગ્રાહક ડેટા સુધારો અથવા રદ કરો")
     if not df.empty:
-        opts = [f"{i}: {r['Name']} - {r['Vehicle_No']}" for i, r in df.iterrows()]
-        sel = st.selectbox("ગ્રાહક પસંદ કરો:", opts)
-        if sel:
-            s_idx = int(sel.split(":")[0])
-            s_row = df.loc[s_idx]
+        opts = {f"{r['id']}: {r['name']} - {r['vehicle_no']}": r['id'] for _, r in df.iterrows()}
+        sel_label = st.selectbox("ગ્રાહક પસંદ કરો:", list(opts.keys()))
+        
+        if sel_label:
+            p_id = opts[sel_label]
+            s_row = df[df['id'] == p_id].iloc[0]
             
             with st.form("edit_form"):
                 e1, e2 = st.columns(2)
-                en = e1.text_input("નામ", value=str(s_row['Name']))
-                em = e2.text_input("મોબાઇલ", value=str(s_row['Mobile']))
-                ev = e1.text_input("વાહન નંબર", value=str(s_row['Vehicle_No']))
-                et = e2.text_input("વાહનનો પ્રકાર", value=str(s_row['Vehicle_Type']))
-                ec = e1.text_input("કંપની", value=str(s_row['Policy_Company']))
-                ep = e2.text_input("પોલિસી નં", value=str(s_row['Policy_No']))
+                en = e1.text_input("નામ", value=str(s_row['name']))
+                em = e2.text_input("મોબાઇલ", value=str(s_row['mobile']))
+                ev = e1.text_input("વાહન નંબર", value=str(s_row['vehicle_no']))
+                et = e2.text_input("વાહનનો પ્રકાર", value=str(s_row['vehicle_type']))
+                ec = e1.text_input("કંપની", value=str(s_row['policy_company']))
+                ep = e2.text_input("પોલિસી નં", value=str(s_row['policy_no']))
                 
-                try: prem_val = int(float(s_row['Premium_Amount']))
-                except: prem_val = 0
+                try: 
+                    prem_val = int(float(s_row['premium_amount']))
+                except Exception: 
+                    prem_val = 0
                 eprem = e1.number_input("પ્રીમિયમ (₹)", value=prem_val, step=500)
                 
-                try: exp_val = datetime.strptime(str(s_row['Expiry_Date']), "%Y-%m-%d").date()
-                except: exp_val = date.today()
+                try: 
+                    exp_val = datetime.strptime(str(s_row['expiry_date']), "%Y-%m-%d").date()
+                except Exception: 
+                    exp_val = date.today()
                 eexp = e2.date_input("એક્સપાયરી તારીખ", value=exp_val)
-                erem = st.text_input("નોંધ", value=str(s_row['Remarks']))
+                erem = st.text_input("નોંધ", value=str(s_row['remarks']))
                 
                 ub1, ub2 = st.columns(2)
                 if ub1.form_submit_button("🔄 અપડેટ કરો"):
-                    df.at[s_idx, "Name"] = en.strip()
-                    df.at[s_idx, "Mobile"] = em.strip()
-                    df.at[s_idx, "Vehicle_No"] = ev.upper().strip()
-                    df.at[s_idx, "Vehicle_Type"] = et
-                    df.at[s_idx, "Policy_Company"] = ec.strip()
-                    df.at[s_idx, "Policy_No"] = ep.strip()
-                    df.at[s_idx, "Premium_Amount"] = eprem
-                    df.at[s_idx, "Expiry_Date"] = str(eexp)
-                    df.at[s_idx, "Remarks"] = erem.strip()
-                    save_data(df)
+                    update_policy(p_id, en.strip(), em.strip(), ev.upper().strip(), et, ec.strip(), ep.strip(), eprem, str(eexp), erem.strip())
                     st.success("વિગતો અપડેટ થઈ ગઈ!")
                     st.rerun()
                 if ub2.form_submit_button("🗑️ એન્ટ્રી ડિલીટ કરો"):
-                    df = df.drop(s_idx).reset_index(drop=True)
-                    save_data(df)
+                    delete_policy(p_id)
                     st.warning("એન્ટ્રી ડિલીટ થઈ ગઈ!")
                     st.rerun()
     else:
         st.info("ડેટાબેઝ ખાલી છે.")
 
-# ----------------- 6. બેકઅપ અને સેટિંગ્સ -----------------
-elif menu_choice == "💾 ડેટા બેકઅપ & સેટિંગ્સ":
-    st.title("💾 ડેટા ઓટોમેશન & બેકઅપ")
-    st.markdown("""
-    💡 **લાઈવ ગૂગલ શીટ કનેક્શન:**  
-    જો તમે Google Sheets કનેક્ટ કરશો, તો તમારે ક્યારેય મેન્યુઅલ બેકઅપ લેવું નહીં પડે કે ફાઈલ અપલોડ કરવી નહીં પડે. બધી એન્ટ્રી સીધી Google Sheets માં ક્લાઉડ પર સુરક્ષિત રહેશે.
-    """)
+# ----------------- 6. બેકઅપ અને રિસ્ટોર -----------------
+elif menu_choice == "💾 ડેટા બેકઅપ & રિસ્ટોર":
+    st.title("💾 ડેટા બેકઅપ અને રિસ્ટોર સેન્ટર")
     bk1, bk2 = st.columns(2)
     with bk1:
-        st.markdown("### 📥 ડાઉનલોડ ઑફલાઇન બેકઅપ")
+        st.markdown("### 📥 ડાઉનલોડ બેકઅપ")
+        st.write("હાલના તમામ ગ્રાહકોની CSV બેકઅપ ફાઈલ ડાઉનલોડ કરો.")
         if not df.empty:
             bk_csv = df.to_csv(index=False).encode('utf-8')
             st.download_button("⬇️ સંપૂર્ણ ડેટાબેઝ ડાઉનલોડ (CSV)", data=bk_csv, file_name=f"hari_om_backup_{date.today()}.csv", mime="text/csv")
+        else:
+            st.info("બેકઅપ લેવા માટે ડેટાબેઝમાં કોઈ એન્ટ્રી નથી.")
     with bk2:
-        st.markdown("### 📤 CSV ફાઇલ રિસ્ટોર કરો")
-        up_file = st.file_uploader("CSV બેકઅપ અપલોડ કરો", type=["csv"])
+        st.markdown("### 📤 રિસ્ટોર ડેટા")
+        st.write("અગાઉ લીધેલ બેકઅપ CSV ફાઇલ અપલોડ કરીને ડેટા પાછો લાવો.")
+        up_file = st.file_uploader("CSV ફાઇલ અપલોડ કરો", type=["csv"])
         if up_file and st.button("🚀 ડેટા રિસ્ટોર કરો"):
             try:
                 new_df = pd.read_csv(up_file)
-                save_data(new_df)
+                for _, r in new_df.iterrows():
+                    insert_policy(
+                        str(r.get('name', '')),
+                        str(r.get('mobile', '')),
+                        str(r.get('vehicle_no', '')),
+                        str(r.get('vehicle_type', '')),
+                        str(r.get('policy_company', '')),
+                        str(r.get('policy_no', '')),
+                        float(r.get('premium_amount', 0)),
+                        str(r.get('expiry_date', '')),
+                        str(r.get('remarks', ''))
+                    )
                 st.success("ડેટા સફળતાપૂર્વક રિસ્ટોર થઈ ગયો!")
                 st.rerun()
             except Exception as err:
-                st.error(f"એરર: {err}")
+                st.error(f"એરર આવી: {err}")
