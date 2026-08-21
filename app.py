@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, date, timedelta
 import urllib.parse
 import os
+import sqlite3
 from streamlit_gsheets import GSheetsConnection
 
 # ----------------- પેજ કન્ફિગરેશન -----------------
@@ -13,53 +14,116 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ----------------- GOOGLE SHEETS CONNECTION -----------------
+# ----------------- ડેટાબેઝ & GOOGLE SHEETS સેટઅપ -----------------
 COLUMNS = [
     "id", "name", "mobile", "vehicle_no", "vehicle_type", 
     "policy_company", "policy_no", "premium_amount", 
     "expiry_date", "remarks", "last_renewed"
 ]
 
+LOCAL_DB = "insurance_master.db"
 DEFAULT_PIN = "7698"
 
-conn = st.connection("gsheets", type=GSheetsConnection)
+# લોકલ SQLite બેકઅપ
+def init_local_db():
+    conn_sq = sqlite3.connect(LOCAL_DB)
+    c = conn_sq.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS policies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT, mobile TEXT, vehicle_no TEXT, vehicle_type TEXT,
+            policy_company TEXT, policy_no TEXT, premium_amount REAL,
+            expiry_date TEXT, remarks TEXT, last_renewed TEXT
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY, value TEXT
+        )
+    ''')
+    c.execute("SELECT value FROM app_settings WHERE key = 'app_pin'")
+    if not c.fetchone():
+        c.execute("INSERT INTO app_settings (key, value) VALUES ('app_pin', ?)", (DEFAULT_PIN,))
+    conn_sq.commit()
+    conn_sq.close()
+
+init_local_db()
+
+def get_gsheets_connection():
+    try:
+        return st.connection("gsheets", type=GSheetsConnection)
+    except Exception:
+        return None
+
+g_conn = get_gsheets_connection()
 
 def get_data():
-    try:
-        df = conn.read(worksheet="policies", ttl=0)
-        for col in COLUMNS:
-            if col not in df.columns:
-                df[col] = ""
-        return df[COLUMNS].dropna(how="all")
-    except Exception:
+    if g_conn:
         try:
-            df = conn.read(ttl=0)
+            df = g_conn.read(worksheet="policies", ttl=0)
             for col in COLUMNS:
                 if col not in df.columns:
                     df[col] = ""
-            return df[COLUMNS].dropna(how="all")
+            df = df[COLUMNS].dropna(how="all")
+            if not df.empty:
+                return df
         except Exception:
-            return pd.DataFrame(columns=COLUMNS)
+            pass
+
+    # જો Google Sheet કનેક્ટ ન થાય તો લોકલ SQLite માંથી ડેટા લોડ કરશે
+    try:
+        conn_sq = sqlite3.connect(LOCAL_DB)
+        df_local = pd.read_sql_query("SELECT * FROM policies", conn_sq)
+        conn_sq.close()
+        for col in COLUMNS:
+            if col not in df_local.columns:
+                df_local[col] = ""
+        return df_local[COLUMNS]
+    except Exception:
+        return pd.DataFrame(columns=COLUMNS)
 
 def save_all_data(df):
+    saved_to_cloud = False
+    if g_conn:
+        try:
+            g_conn.update(worksheet="policies", data=df)
+            saved_to_cloud = True
+        except Exception:
+            try:
+                g_conn.update(data=df)
+                saved_to_cloud = True
+            except Exception:
+                saved_to_cloud = False
+    
+    # હંમેશા લોકલ SQLite માં સેવ રાખવું જેથી PermissionError વખતે પણ ડેટા ન જાય
     try:
-        conn.update(worksheet="policies", data=df)
+        conn_sq = sqlite3.connect(LOCAL_DB)
+        df.to_sql("policies", conn_sq, if_exists="replace", index=False)
+        conn_sq.close()
     except Exception:
-        conn.update(data=df)
+        pass
+
+    return saved_to_cloud
 
 def get_current_pin():
     try:
-        df_settings = conn.read(worksheet="settings", ttl=0)
-        if not df_settings.empty and "value" in df_settings.columns:
-            return str(df_settings.iloc[0]["value"])
+        conn_sq = sqlite3.connect(LOCAL_DB)
+        c = conn_sq.cursor()
+        c.execute("SELECT value FROM app_settings WHERE key = 'app_pin'")
+        row = c.fetchone()
+        conn_sq.close()
+        if row: return str(row[0])
     except Exception:
         pass
     return DEFAULT_PIN
 
-def update_pin_gsheet(new_pin):
+def update_pin_db(new_pin):
     try:
-        df_settings = pd.DataFrame([{"key": "app_pin", "value": str(new_pin)}])
-        conn.update(worksheet="settings", data=df_settings)
+        conn_sq = sqlite3.connect(LOCAL_DB)
+        c = conn_sq.cursor()
+        c.execute("UPDATE app_settings SET value = ? WHERE key = 'app_pin'", (str(new_pin),))
+        conn_sq.commit()
+        conn_sq.close()
     except Exception:
         pass
 
@@ -266,7 +330,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------- MODERN PIN LOGIN SCREEN -----------------
+# ----------------- LOGIN SCREEN -----------------
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
@@ -568,7 +632,7 @@ elif st.session_state.current_page == "➕ નવી પોલિસી એન�
                     str(expiry),
                     remarks.strip()
                 )
-                st.success("✅ નવો ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો!")
+                st.success("✅ નવો ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો અને ડેટા સેવ થઈ ગયો!")
                 st.rerun()
             else:
                 st.error("કૃપા કરીને નામ, મોબાઇલ અને વાહન નંબર ભરો.")
@@ -642,7 +706,7 @@ elif st.session_state.current_page == "💾 બેકઅપ & રિસ્ટો
             st.info("બેકઅપ લેવા માટે ડેટાબેઝમાં કોઈ એન્ટ્રી નથી.")
     with bk2:
         st.markdown("### 📤 રિસ્ટોર ડેટા")
-        st.write("અગાઉ લીધેલ બેકઅપ CSV ફાઇલ અપલોડ કરીને ડેટા Google Sheets માં રિસ્ટોર કરો.")
+        st.write("અગાઉ લીધેલ બેકઅપ CSV ફાઇલ અપલોડ કરીને ડેટા રિસ્ટોર કરો.")
         up_file = st.file_uploader("CSV ફાઇલ અપલોડ કરો", type=["csv"])
         if up_file and st.button("🚀 ડેટા રિસ્ટોર કરો"):
             try:
@@ -652,7 +716,7 @@ elif st.session_state.current_page == "💾 બેકઅપ & રિસ્ટો
                         new_df[col] = ""
                 new_df = new_df[COLUMNS]
                 save_all_data(new_df)
-                st.success("ડેટા સફળતાપૂર્વક Google Sheets માં રિસ્ટોર થઈ ગયો!")
+                st.success("ડેટા સફળતાપૂર્વક રિસ્ટોર થઈ ગયો!")
                 st.rerun()
             except Exception as err:
                 st.error(f"એરર આવી: {err}")
@@ -680,5 +744,5 @@ elif st.session_state.current_page == "🔐 પિન બદલો":
                 elif new_pin_input != confirm_pin_input:
                     st.error("❌ નવો પિન અને કન્ફર્મ પિન મેચ થતા નથી.")
                 else:
-                    update_pin_gsheet(new_pin_input.strip())
+                    update_pin_db(new_pin_input.strip())
                     st.success("✅ સિક્યોરિટી પિન સફળતાપૂર્વક બદલાઈ ગયો છે!")
