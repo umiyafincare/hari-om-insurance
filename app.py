@@ -16,6 +16,7 @@ st.set_page_config(
 
 # ----------------- GOOGLE SHEETS સેટઅપ -----------------
 SHEET_NAME = "Hari_Om_Insurance_DB"
+LOCAL_CSV = "insurance_data.csv"
 DEFAULT_PIN = "7698"
 
 COLUMNS = [
@@ -37,11 +38,8 @@ def get_gspread_client():
                 creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
             credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             return gspread.authorize(credentials)
-        else:
-            st.error("❌ Streamlit Secrets માં 'gcp_service_account' મળ્યું નથી!")
-            return None
-    except Exception as e:
-        st.error(f"❌ Google Auth Error: {e}")
+        return None
+    except Exception:
         return None
 
 def get_sheet():
@@ -49,8 +47,7 @@ def get_sheet():
     if client:
         try:
             return client.open(SHEET_NAME).sheet1
-        except Exception as e:
-            st.error(f"❌ Sheet Open Error ('{SHEET_NAME}' નામની શીટ મળી નથી અથવા Service Account સાથે શેર નથી): {e}")
+        except Exception:
             return None
     return None
 
@@ -63,19 +60,46 @@ def get_data():
             for col in COLUMNS:
                 if col not in df.columns:
                     df[col] = ""
-            return df[COLUMNS]
+            df_clean = df[COLUMNS].dropna(how="all")
+            if not df_clean.empty:
+                df_clean.to_csv(LOCAL_CSV, index=False)
+                return df_clean
         except Exception:
             pass
             
-    if os.path.exists("insurance_data.csv"):
-        return pd.read_csv("insurance_data.csv")
+    if os.path.exists(LOCAL_CSV):
+        df_local = pd.read_csv(LOCAL_CSV)
+        for col in COLUMNS:
+            if col not in df_local.columns:
+                df_local[col] = ""
+        return df_local[COLUMNS]
     return pd.DataFrame(columns=COLUMNS)
 
-def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
+def save_all_to_sheet(df):
     sheet = get_sheet()
+    df.to_csv(LOCAL_CSV, index=False)
+    if sheet:
+        try:
+            sheet.clear()
+            sheet.append_row(COLUMNS)
+            if not df.empty:
+                sheet.append_rows(df.values.tolist())
+            return True
+        except Exception:
+            return False
+    return False
+
+def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
     df = get_data()
-    
-    new_id = len(df) + 1
+    if not df.empty and "id" in df.columns:
+        try:
+            valid_ids = pd.to_numeric(df["id"], errors="coerce").dropna()
+            new_id = int(valid_ids.max() + 1) if not valid_ids.empty else 1
+        except Exception:
+            new_id = len(df) + 1
+    else:
+        new_id = 1
+
     new_row = [
         new_id,
         name,
@@ -90,18 +114,37 @@ def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium,
         str(date.today())
     ]
     
-    success = False
+    sheet = get_sheet()
     if sheet:
         try:
             sheet.append_row(new_row)
-            success = True
-        except Exception as e:
-            st.error(f"❌ Sheet Append Error: {e}")
+        except Exception:
+            pass
             
     row_dict = dict(zip(COLUMNS, new_row))
     new_df = pd.concat([df, pd.DataFrame([row_dict])], ignore_index=True)
-    new_df.to_csv("insurance_data.csv", index=False)
-    return success
+    new_df.to_csv(LOCAL_CSV, index=False)
+
+def update_policy(p_id, name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
+    df = get_data()
+    idx = df[df["id"].astype(str) == str(p_id)].index
+    if not idx.empty:
+        i = idx[0]
+        df.at[i, "name"] = name
+        df.at[i, "mobile"] = str(mobile)
+        df.at[i, "vehicle_no"] = vehicle_no
+        df.at[i, "vehicle_type"] = v_type
+        df.at[i, "policy_company"] = company
+        df.at[i, "policy_no"] = str(policy_no)
+        df.at[i, "premium_amount"] = premium
+        df.at[i, "expiry_date"] = str(expiry)
+        df.at[i, "remarks"] = remarks
+        save_all_to_sheet(df)
+
+def delete_policy(p_id):
+    df = get_data()
+    df = df[df["id"].astype(str) != str(p_id)].reset_index(drop=True)
+    save_all_to_sheet(df)
 
 def renew_one_year(p_id, current_expiry_str):
     try:
@@ -110,16 +153,13 @@ def renew_one_year(p_id, current_expiry_str):
         curr_dt = date.today()
     new_dt = str(curr_dt + timedelta(days=365))
     
-    sheet = get_sheet()
-    if sheet:
-        try:
-            cell = sheet.find(str(p_id))
-            if cell:
-                row_num = cell.row
-                sheet.update_cell(row_num, 9, new_dt)
-                sheet.update_cell(row_num, 11, str(date.today()))
-        except Exception:
-            pass
+    df = get_data()
+    idx = df[df["id"].astype(str) == str(p_id)].index
+    if not idx.empty:
+        i = idx[0]
+        df.at[i, "expiry_date"] = new_dt
+        df.at[i, "last_renewed"] = str(date.today())
+        save_all_to_sheet(df)
 
 # ----------------- MODERN CUSTOM CSS -----------------
 st.markdown("""
@@ -141,6 +181,7 @@ st.markdown("""
     .badge-success { background: #dcfce7; color: #166534; padding: 5px 12px; border-radius: 9999px; font-weight: 600; font-size: 12px; border: 1px solid #bbf7d0; }
     [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e2e8f0; }
     [data-testid="stSidebar"] .stButton > button { width: 100% !important; text-align: left !important; justify-content: flex-start !important; padding: 10px 16px !important; border-radius: 10px !important; margin-bottom: 6px !important; font-family: 'Poppins', sans-serif !important; font-size: 14px !important; font-weight: 500 !important; border: 1px solid #e2e8f0 !important; background-color: #f8fafc !important; color: #334155 !important; }
+    [data-testid="stSidebar"] .stButton > button:hover { background-color: #1E3A8A !important; color: #ffffff !important; border-color: #1E3A8A !important; }
     [data-testid="stSidebar"] .stButton > button[kind="primary"] { background-color: #1E3A8A !important; color: #ffffff !important; border-color: #1E3A8A !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -148,6 +189,9 @@ st.markdown("""
 # ----------------- LOGIN SCREEN -----------------
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+
+if "app_pin" not in st.session_state:
+    st.session_state.app_pin = DEFAULT_PIN
 
 if not st.session_state.authenticated:
     _, col_mid, _ = st.columns([1, 1.4, 1])
@@ -160,7 +204,7 @@ if not st.session_state.authenticated:
             elif os.path.exists("logo.jpg"):
                 st.image("logo.jpg", use_container_width=True)
             else:
-                st.markdown("<h1 style='text-align:center; font-size:48px;'>🛡️</h1>", unsafe_allow_html=True)
+                st.markdown("<h1 style='text-align:center;'>🛡️</h1>", unsafe_allow_html=True)
 
         st.markdown("""
         <div style='text-align:center; margin-bottom: 15px;'>
@@ -173,12 +217,12 @@ if not st.session_state.authenticated:
         with st.form("pin_form"):
             pin_input = st.text_input("સિક્યોરિટી પિન", type="password", placeholder="••••", label_visibility="collapsed")
             if st.form_submit_button("🔓 પોર્ટલ ખોલો (Login)", use_container_width=True):
-                if pin_input == DEFAULT_PIN:
+                if pin_input == st.session_state.app_pin:
                     st.session_state.authenticated = True
                     st.success("✅ લોગિન સફળ!")
                     st.rerun()
                 else:
-                    st.error("❌ ખોટો પિન!")
+                    st.error("❌ ખોટો પિન! ફરીથી પ્રયાસ કરો.")
     st.stop()
 
 # ----------------- MAIN APP -----------------
@@ -187,6 +231,7 @@ df = get_data()
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "📊 ડેશબોર્ડ"
 
+# ----------------- સાઇડબાર -----------------
 with st.sidebar:
     logo_c1, logo_c2, logo_c3 = st.columns([1, 2.5, 1])
     with logo_c2:
@@ -194,9 +239,19 @@ with st.sidebar:
             st.image("HARI OM IL.jpg", use_container_width=True)
         elif os.path.exists("logo.jpg"):
             st.image("logo.jpg", use_container_width=True)
+        else:
+            st.markdown("<h3 style='text-align:center; color:#1e3a8a;'>🛡️ HARI OM</h3>", unsafe_allow_html=True)
 
     st.markdown("<p style='font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase; margin: 12px 0 6px 0;'>મેનૂ વિકલ્પો</p>", unsafe_allow_html=True)
-    menu_items = ["📊 ડેશબોર્ડ", "🔔 રીમાઇન્ડર ડેસ્ક", "➕ નવી પોલિસી એન્ટ્રી", "📁 તમામ ગ્રાહકોની યાદી"]
+    menu_items = [
+        "📊 ડેશબોર્ડ", 
+        "🔔 રીમાઇન્ડર ડેસ્ક", 
+        "➕ નવી પોલિસી એન્ટ્રી", 
+        "📁 તમામ ગ્રાહકોની યાદી", 
+        "⚙️ એડિટ / ડિલીટ",
+        "💾 બેકઅપ & રિસ્ટોર",
+        "🔐 પિન બદલો"
+    ]
     
     for item in menu_items:
         is_active = (st.session_state.current_page == item)
@@ -220,9 +275,9 @@ with st.sidebar:
 if st.session_state.current_page == "📊 ડેશબોર્ડ":
     st.markdown("<h2 style='color:#0f172a;'>📊 બિઝનેસ ડેશબોર્ડ</h2>", unsafe_allow_html=True)
     
-    # ક્વિક સર્ચ
+    # ક્વિક સર્ચ સેક્શન
     st.markdown("### 🔍 ક્વિક સર્ચ & ગ્રાહક સ્ટેટસ (નવો કે જૂનો ગ્રાહક)")
-    search_term = st.text_input("વાહન નંબર, મોબાઈલ નંબર કે પોલિસી નંબર નાખો:", placeholder="વાહન નંબર / મોબાઈલ / પોલિસી નં.")
+    search_term = st.text_input("વાહન નંબર, મોબાઈલ નંબર કે પોલિસી નંબર નાખો:", placeholder="GJ-xx-xxxx / મોબાઈલ / પોલિસી નં.")
     
     if search_term.strip():
         clean_query = search_term.strip().lower()
@@ -233,14 +288,23 @@ if st.session_state.current_page == "📊 ડેશબોર્ડ":
         ]
         
         if not search_results.empty:
-            st.markdown("<div class='customer-found-card'><b>✅ જૂનો ગ્રાહક છે (પોલિસી સિસ્ટમમાં ઉપલબ્ધ છે)</b></div>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="customer-found-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0; color:#166534;">✅ પોલિસી મળી ગઈ (જૂનો ગ્રાહક છે)</h4>
+                    <span class="badge-success">કુલ રેકોર્ડ: {len(search_results)}</span>
+                </div>
+                <p style="margin:5px 0 0 0; color:#15803d; font-size:13px;">આ ગ્રાહકનો ડેટા પહેલેથી જ આપણી સિસ્ટમમાં ઉપલબ્ધ છે.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
             for _, r in search_results.iterrows():
                 col_det1, col_det2 = st.columns([3, 1])
                 with col_det1:
                     st.markdown(f"👤 **{r['name']}** | 🚗 વાહન: `{r['vehicle_no']}` ({r['vehicle_type']})")
                     st.markdown(f"🏢 **કંપની:** {r['policy_company']} | 📋 **પોલિસી નં:** `{r['policy_no']}` | 💰 **પ્રીમિયમ:** ₹{r['premium_amount']} | 📅 **એક્સપાયરી:** `{r['expiry_date']}`")
                 with col_det2:
-                    msg_text = f"નમસ્તે {r['name']}જી, આપના વાહન *{r['vehicle_no']}* ની પોલિસી એક્સપાયરી તારીખ *{r['expiry_date']}* છે. રિન્યુઅલ માટે સંપર્ક કરો: હરિ ઓમ ઇન્સ્યોરન્સ (Mo: 7698564672)."
+                    msg_text = f"નમસ્તે {r['name']}જી, આપના વાહન *{r['vehicle_no']}* ની પોલિસી એક્સપાયરી તારીખ *{r['expiry_date']}* છે. રિન્યુઅલ માટે સંપર્ક કરો: હરિ ઓમ ઇન્સ્યોરન્સ, કડી (Mo: 7698564672)."
                     wa_url = f"https://wa.me/91{''.join(filter(str.isdigit, str(r['mobile'])))[-10:]}?text={urllib.parse.quote(msg_text)}"
                     st.link_button("📲 WhatsApp", wa_url)
                 st.divider()
@@ -259,10 +323,14 @@ if st.session_state.current_page == "📊 ડેશબોર્ડ":
         valid = df_dash.dropna(subset=["expiry_dt"])
         days = valid["expiry_dt"].apply(lambda x: (x - today).days)
         
+        due_15 = valid[(days <= 15) & (days >= 0)]
+        expired = valid[days < 0]
+        active = valid[days > 15]
+        
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("👥 કુલ પોલિસી", len(df))
-        c2.metric("⚠️ ૧૫ દિવસમાં બાકી", len(valid[(days <= 15) & (days >= 0)]))
-        c3.metric("✅ એક્ટિવ પોલિસી", len(valid[days > 15]))
+        c2.metric("⚠️ ૧૫ દિવસમાં બાકી", len(due_15))
+        c3.metric("✅ એક્ટિવ પોલિસી", len(active))
         c4.metric("💰 કુલ પ્રીમિયમ", f"₹{df_dash['premium_clean'].sum():,.0f}")
     else:
         st.info("ડેટાબેઝ ખાલી છે.")
@@ -281,7 +349,15 @@ elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડે�
         if not reminders.empty:
             for _, row in reminders.iterrows():
                 badge = f"<span class='badge-urgent'>🚨 {row['days_left']} દિવસ બાકી</span>" if row['days_left'] <= 3 else f"<span class='badge-warning'>⏳ {row['days_left']} દિવસ બાકી</span>"
-                msg = f"નમસ્તે {row['name']}જી,\n\nહરિ ઓમ ઇન્સ્યોરન્સ તરફથી યાદી કે આપના વાહન નંબર *{row['vehicle_no']}* ના ઇન્સ્યોરન્સની મુદત તારીખ *{row['expiry_date']}* ના રોજ પૂર્ણ થઈ રહી છે ({row['days_left']} દિવસ બાકી).\n\n📄 પોલિસી નં: {row['policy_no']}\n🏢 કંપની: {row['policy_company']}\n\nસમયસર રિન્યુ કરાવવા વિનંતી.\n📞 7698564672 / 9714776364"
+                msg = (
+                    f"નમસ્તે {row['name']}જી,\n\n"
+                    f"હરિ ઓમ ઇન્સ્યોરન્સ તરફથી યાદી કે આપના વાહન નંબર *{row['vehicle_no']}* ના ઇન્સ્યોરન્સની મુદત તારીખ *{row['expiry_date']}* ના રોજ પૂર્ણ થઈ રહી છે ({row['days_left']} દિવસ બાકી).\n\n"
+                    f"📄 પોલિસી નં: {row['policy_no']}\n"
+                    f"🏢 કંપની: {row['policy_company']}\n\n"
+                    f"સમયસર રિન્યુ કરાવવા વિનંતી.\n"
+                    f"📞 7698564672 / 9714776364\n"
+                    f"*હરિ ઓમ ઇન્સ્યોરન્સ & લોન એડવાઈઝર, કડી*"
+                )
                 clean_mobile = "".join(filter(str.isdigit, str(row['mobile'])))[-10:]
                 wa_url = f"https://wa.me/91{clean_mobile}?text={urllib.parse.quote(msg)}"
                 
@@ -326,21 +402,105 @@ elif st.session_state.current_page == "➕ નવી પોલિસી એન�
         
         if st.form_submit_button("💾 પોલિસી સેવ કરો"):
             if name.strip() and mobile.strip() and vehicle_no.strip():
-                is_saved = insert_policy(name.strip(), mobile.strip(), vehicle_no.upper().strip(), vehicle_type, company, policy_no.strip(), premium, str(expiry), remarks.strip())
-                if is_saved:
-                    st.success("✅ નવો ગ્રાહક સફળતાપૂર્વક Google Sheets માં ઉમેરાઈ ગયો!")
-                else:
-                    st.warning("⚠️ Google Sheets માં સેવ ન થયો (ડેટા લોકલ સેવ થયો છે).")
+                insert_policy(name.strip(), mobile.strip(), vehicle_no.upper().strip(), vehicle_type, company, policy_no.strip(), premium, str(expiry), remarks.strip())
+                st.success("✅ નવો ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો!")
                 st.rerun()
             else:
                 st.error("નામ, મોબાઇલ અને વાહન નંબર જરૂરી છે.")
 
 # ----------------- 4. તમામ ગ્રાહકોની યાદી -----------------
 elif st.session_state.current_page == "📁 તમામ ગ્રાહકોની યાદી":
-    st.markdown("<h2 style='color:#0f172a;'>📁 તમામ ગ્રાહકોની યાદી (Google Sheets Live)</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color:#0f172a;'>📁 તમામ ગ્રાહકોની યાદી</h2>", unsafe_allow_html=True)
     if not df.empty:
         st.dataframe(df, use_container_width=True)
         csv_exp = df.to_csv(index=False).encode('utf-8')
         st.download_button("📥 Excel / CSV માં ડાઉનલોડ કરો", data=csv_exp, file_name="HariOm_Clients.csv", mime="text/csv")
     else:
-        st.info("શીટમાં કોઈ ડેટા નથી.")
+        st.info("કોઈ ગ્રાહકનો ડેટા નથી.")
+
+# ----------------- 5. એડિટ / ડિલીટ -----------------
+elif st.session_state.current_page == "⚙️ એડિટ / ડિલીટ":
+    st.markdown("<h2 style='color:#0f172a;'>⚙️ ગ્રાહક ડેટા સુધારો અથવા રદ કરો</h2>", unsafe_allow_html=True)
+    if not df.empty:
+        opts = {f"{r['id']}: {r['name']} - {r['vehicle_no']}": r['id'] for _, r in df.iterrows()}
+        sel_label = st.selectbox("ગ્રાહક પસંદ કરો:", list(opts.keys()))
+        
+        if sel_label:
+            p_id = opts[sel_label]
+            s_row = df[df['id'].astype(str) == str(p_id)].iloc[0]
+            
+            with st.form("edit_form"):
+                e1, e2 = st.columns(2)
+                en = e1.text_input("નામ", value=str(s_row['name']))
+                em = e2.text_input("મોબાઇલ", value=str(s_row['mobile']))
+                ev = e1.text_input("વાહન નંબર", value=str(s_row['vehicle_no']))
+                et = e2.text_input("વાહનનો પ્રકાર", value=str(s_row['vehicle_type']))
+                ec = e1.text_input("કંપની", value=str(s_row['policy_company']))
+                ep = e2.text_input("પોલિસી નં", value=str(s_row['policy_no']))
+                
+                try: prem_val = int(float(s_row['premium_amount']))
+                except Exception: prem_val = 0
+                eprem = e1.number_input("પ્રીમિયમ (₹)", value=prem_val, step=500)
+                
+                try: exp_val = datetime.strptime(str(s_row['expiry_date']), "%Y-%m-%d").date()
+                except Exception: exp_val = date.today()
+                eexp = e2.date_input("એક્સપાયરી તારીખ", value=exp_val)
+                erem = st.text_input("નોંધ", value=str(s_row['remarks']))
+                
+                ub1, ub2 = st.columns(2)
+                if ub1.form_submit_button("🔄 વિગતો અપડેટ કરો"):
+                    update_policy(p_id, en.strip(), em.strip(), ev.upper().strip(), et, ec.strip(), ep.strip(), eprem, str(eexp), erem.strip())
+                    st.success("વિગતો અપડેટ થઈ ગઈ!")
+                    st.rerun()
+                if ub2.form_submit_button("🗑️ એન્ટ્રી ડિલીટ કરો"):
+                    delete_policy(p_id)
+                    st.warning("એન્ટ્રી ડિલીટ થઈ ગઈ!")
+                    st.rerun()
+    else:
+        st.info("ડેટાબેઝ ખાલી છે.")
+
+# ----------------- 6. બેકઅપ અને રિસ્ટોર -----------------
+elif st.session_state.current_page == "💾 બેકઅપ & રિસ્ટોર":
+    st.markdown("<h2 style='color:#0f172a;'>💾 ડેટા બેકઅપ અને રિસ્ટોર</h2>", unsafe_allow_html=True)
+    bk1, bk2 = st.columns(2)
+    with bk1:
+        st.markdown("### 📥 ડાઉનલોડ બેકઅપ")
+        if not df.empty:
+            bk_csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("⬇️ ડેટાબેઝ ડાઉનલોડ (CSV)", data=bk_csv, file_name=f"hari_om_backup_{date.today()}.csv", mime="text/csv")
+    with bk2:
+        st.markdown("### 📤 રિસ્ટોર ડેટા")
+        up_file = st.file_uploader("CSV ફાઇલ અપલોડ કરો", type=["csv"])
+        if up_file and st.button("🚀 ડેટા રિસ્ટોર કરો"):
+            try:
+                new_df = pd.read_csv(up_file)
+                for col in COLUMNS:
+                    if col not in new_df.columns:
+                        new_df[col] = ""
+                new_df = new_df[COLUMNS]
+                save_all_to_sheet(new_df)
+                st.success("ડેટા સફળતાપૂર્વક રિસ્ટોર થઈ ગયો!")
+                st.rerun()
+            except Exception as err:
+                st.error(f"એરર આવી: {err}")
+
+# ----------------- 7. પિન બદલો -----------------
+elif st.session_state.current_page == "🔐 પિન બદલો":
+    st.markdown("<h2 style='color:#0f172a;'>🔐 સિક્યોરિટી પિન બદલો</h2>", unsafe_allow_html=True)
+    col_p1, _ = st.columns([1.5, 1])
+    with col_p1:
+        with st.form("change_pin_form"):
+            old_pin = st.text_input("જૂનો પિન", type="password")
+            new_pin = st.text_input("નવો પિન", type="password")
+            confirm_pin = st.text_input("નવો પિન કન્ફર્મ કરો", type="password")
+            
+            if st.form_submit_button("💾 નવો પિન સેવ કરો"):
+                if old_pin != st.session_state.app_pin:
+                    st.error("❌ જૂનો પિન ખોટો છે.")
+                elif len(new_pin.strip()) < 4:
+                    st.warning("⚠️ નવો પિન ઓછામાં ઓછો ૪ અંકનો હોવો જોઈએ.")
+                elif new_pin != confirm_pin:
+                    st.error("❌ નવો પિન મેચ થતો નથી.")
+                else:
+                    st.session_state.app_pin = new_pin.strip()
+                    st.success("✅ સિક્યોરિટી પિન બદલાઈ ગયો છે!")
