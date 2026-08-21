@@ -1,11 +1,11 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
-import sqlite3
 import urllib.parse
 import os
+from streamlit_gsheets import GSheetsConnection
 
-# પેજ કન્ફિગરેશન
+# ----------------- પેજ કન્ફિગરેશન -----------------
 st.set_page_config(
     page_title="Hari Om Insurance & Loan Advisor",
     page_icon="🛡️",
@@ -13,89 +13,103 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ----------------- SQLite ડેટાબેઝ સેટઅપ -----------------
-DB_FILE = "insurance_master.db"
+# ----------------- GOOGLE SHEETS CONNECTION -----------------
+COLUMNS = [
+    "id", "name", "mobile", "vehicle_no", "vehicle_type", 
+    "policy_company", "policy_no", "premium_amount", 
+    "expiry_date", "remarks", "last_renewed"
+]
 
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS policies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            mobile TEXT,
-            vehicle_no TEXT,
-            vehicle_type TEXT,
-            policy_company TEXT,
-            policy_no TEXT,
-            premium_amount REAL,
-            expiry_date TEXT,
-            remarks TEXT,
-            last_renewed TEXT
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS app_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    ''')
-    c.execute("SELECT value FROM app_settings WHERE key = 'app_pin'")
-    if not c.fetchone():
-        c.execute("INSERT INTO app_settings (key, value) VALUES ('app_pin', '7698')")
-    conn.commit()
-    conn.close()
+DEFAULT_PIN = "7698"
 
-init_db()
-
-def get_current_pin():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT value FROM app_settings WHERE key = 'app_pin'")
-    row = c.fetchone()
-    conn.close()
-    return row[0] if row else "7698"
-
-def update_pin(new_pin):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("UPDATE app_settings SET value = ? WHERE key = 'app_pin'", (new_pin,))
-    conn.commit()
-    conn.close()
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data():
-    conn = sqlite3.connect(DB_FILE)
-    df = pd.read_sql_query("SELECT * FROM policies", conn)
-    conn.close()
-    return df
+    try:
+        df = conn.read(worksheet="policies", ttl=0)
+        for col in COLUMNS:
+            if col not in df.columns:
+                df[col] = ""
+        return df[COLUMNS].dropna(how="all")
+    except Exception:
+        try:
+            df = conn.read(ttl=0)
+            for col in COLUMNS:
+                if col not in df.columns:
+                    df[col] = ""
+            return df[COLUMNS].dropna(how="all")
+        except Exception:
+            return pd.DataFrame(columns=COLUMNS)
+
+def save_all_data(df):
+    try:
+        conn.update(worksheet="policies", data=df)
+    except Exception:
+        conn.update(data=df)
+
+def get_current_pin():
+    try:
+        df_settings = conn.read(worksheet="settings", ttl=0)
+        if not df_settings.empty and "value" in df_settings.columns:
+            return str(df_settings.iloc[0]["value"])
+    except Exception:
+        pass
+    return DEFAULT_PIN
+
+def update_pin_gsheet(new_pin):
+    try:
+        df_settings = pd.DataFrame([{"key": "app_pin", "value": str(new_pin)}])
+        conn.update(worksheet="settings", data=df_settings)
+    except Exception:
+        pass
 
 def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''
-        INSERT INTO policies (name, mobile, vehicle_no, vehicle_type, policy_company, policy_no, premium_amount, expiry_date, remarks, last_renewed)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks, str(date.today())))
-    conn.commit()
-    conn.close()
+    df = get_data()
+    if not df.empty and "id" in df.columns:
+        try:
+            valid_ids = pd.to_numeric(df["id"], errors="coerce").dropna()
+            new_id = int(valid_ids.max() + 1) if not valid_ids.empty else 1
+        except Exception:
+            new_id = len(df) + 1
+    else:
+        new_id = 1
+
+    new_row = pd.DataFrame([{
+        "id": new_id,
+        "name": name,
+        "mobile": str(mobile),
+        "vehicle_no": vehicle_no,
+        "vehicle_type": v_type,
+        "policy_company": company,
+        "policy_no": str(policy_no),
+        "premium_amount": premium,
+        "expiry_date": str(expiry),
+        "remarks": remarks,
+        "last_renewed": str(date.today())
+    }])
+    updated_df = pd.concat([df, new_row], ignore_index=True)
+    save_all_data(updated_df)
 
 def update_policy(p_id, name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('''
-        UPDATE policies 
-        SET name=?, mobile=?, vehicle_no=?, vehicle_type=?, policy_company=?, policy_no=?, premium_amount=?, expiry_date=?, remarks=?
-        WHERE id=?
-    ''', (name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks, p_id))
-    conn.commit()
-    conn.close()
+    df = get_data()
+    idx = df[df["id"].astype(str) == str(p_id)].index
+    if not idx.empty:
+        i = idx[0]
+        df.at[i, "name"] = name
+        df.at[i, "mobile"] = str(mobile)
+        df.at[i, "vehicle_no"] = vehicle_no
+        df.at[i, "vehicle_type"] = v_type
+        df.at[i, "policy_company"] = company
+        df.at[i, "policy_no"] = str(policy_no)
+        df.at[i, "premium_amount"] = premium
+        df.at[i, "expiry_date"] = str(expiry)
+        df.at[i, "remarks"] = remarks
+        save_all_data(df)
 
 def delete_policy(p_id):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('DELETE FROM policies WHERE id=?', (p_id,))
-    conn.commit()
-    conn.close()
+    df = get_data()
+    df = df[df["id"].astype(str) != str(p_id)].reset_index(drop=True)
+    save_all_data(df)
 
 def renew_one_year(p_id, current_expiry_str):
     try:
@@ -104,18 +118,15 @@ def renew_one_year(p_id, current_expiry_str):
         curr_dt = date.today()
     new_dt = str(curr_dt + timedelta(days=365))
     
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('UPDATE policies SET expiry_date=?, last_renewed=? WHERE id=?', (new_dt, str(date.today()), p_id))
-    conn.commit()
-    conn.close()
+    df = get_data()
+    idx = df[df["id"].astype(str) == str(p_id)].index
+    if not idx.empty:
+        i = idx[0]
+        df.at[i, "expiry_date"] = new_dt
+        df.at[i, "last_renewed"] = str(date.today())
+        save_all_data(df)
 
-df = get_data()
-
-# ----------------- SESSION STATE & STYLING -----------------
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-
+# ----------------- MODERN CUSTOM CSS & GOOGLE FONTS -----------------
 st.markdown("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -135,17 +146,6 @@ st.markdown("""
         background-color: #f1f5f9;
     }
 
-    /* મોર્ડન લોગિન કાર્ડ સ્ટાઇલ */
-    .login-box {
-        background: #ffffff;
-        border-radius: 20px;
-        padding: 35px 30px;
-        box-shadow: 0 20px 40px -15px rgba(30, 58, 138, 0.12), 0 1px 3px rgba(0,0,0,0.05);
-        border: 1px solid #e2e8f0;
-        text-align: center;
-        margin-top: 20px;
-    }
-
     .login-badge {
         background: #eff6ff;
         color: #1e3a8a;
@@ -159,7 +159,6 @@ st.markdown("""
         border: 1px solid #bfdbfe;
     }
 
-    /* મેટ્રિક કાર્ડ્સ */
     [data-testid="stMetric"] {
         background: #ffffff;
         padding: 18px 20px;
@@ -268,12 +267,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ----------------- MODERN PIN LOGIN SCREEN -----------------
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
 if not st.session_state.authenticated:
     _, col_mid, _ = st.columns([1, 1.4, 1])
     with col_mid:
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # ટોપ લોગો બોક્સ
         logo_c1, logo_c2, logo_c3 = st.columns([1, 2, 1])
         with logo_c2:
             if os.path.exists("HARI OM IL.jpg"):
@@ -296,8 +297,8 @@ if not st.session_state.authenticated:
             login_btn = st.form_submit_button("🔓 પોર્ટલ ખોલો (Login)", use_container_width=True)
             
             if login_btn:
-                current_db_pin = get_current_pin()
-                if pin_input == current_db_pin:
+                current_pin = get_current_pin()
+                if pin_input == current_pin:
                     st.session_state.authenticated = True
                     st.success("✅ લોગિન સફળ!")
                     st.rerun()
@@ -311,7 +312,9 @@ if not st.session_state.authenticated:
         """, unsafe_allow_html=True)
     st.stop()
 
-# સેશન સ્ટેટ મેનેજમેન્ટ
+# ----------------- MAIN APP INITIALIZATION -----------------
+df = get_data()
+
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "📊 ડેશબોર્ડ"
 
@@ -332,7 +335,7 @@ with st.sidebar:
         "📊 ડેશબોર્ડ", 
         "🔔 રીમાઇન્ડર ડેસ્ક", 
         "➕ નવી પોલિસી એન્ટ્રી", 
-        "📁 ગ્રાહક ડિરેક્ટરી", 
+        "📁 તમામ ગ્રાહકોની યાદી", 
         "⚙️ એડિટ / ડિલીટ",
         "💾 બેકઅપ & રિસ્ટોર",
         "🔐 પિન બદલો"
@@ -398,12 +401,16 @@ if st.session_state.current_page == "📊 ડેશબોર્ડ":
                             status_badge = f"<span class='badge-warning'>⚠️ {days_diff} દિવસ બાકી</span>"
                         else:
                             status_badge = f"<span class='badge-success'>✅ એક્ટિવ ({days_diff} દિવસ બાકી)</span>"
-                    except:
+                    except Exception:
                         status_badge = ""
 
                     with col_det1:
                         st.markdown(f"👤 **{r['name']}** | 🚗 વાહન: `{r['vehicle_no']}` ({r['vehicle_type']}) | {status_badge}", unsafe_allow_html=True)
-                        st.markdown(f"🏢 **કંપની:** {r['policy_company']} | 📋 **પોલિસી નં:** `{r['policy_no']}` | 💰 **પ્રીમિયમ:** ₹{r['premium_amount']:,.0f} | 📅 **એક્સપાયરી:** `{r['expiry_date']}`")
+                        try:
+                            prem_disp = f"₹{float(r['premium_amount']):,.0f}"
+                        except Exception:
+                            prem_disp = f"₹{r['premium_amount']}"
+                        st.markdown(f"🏢 **કંપની:** {r['policy_company']} | 📋 **પોલિસી નં:** `{r['policy_no']}` | 💰 **પ્રીમિયમ:** {prem_disp} | 📅 **એક્સપાયરી:** `{r['expiry_date']}`")
                         if r['remarks']:
                             st.caption(f"📝 નોંધ: {r['remarks']}")
                             
@@ -567,7 +574,7 @@ elif st.session_state.current_page == "➕ નવી પોલિસી એન�
                 st.error("કૃપા કરીને નામ, મોબાઇલ અને વાહન નંબર ભરો.")
 
 # ----------------- 4. તમામ ગ્રાહકોની યાદી -----------------
-elif st.session_state.current_page == "📁 ગ્રાહક ડિરેક્ટરી":
+elif st.session_state.current_page == "📁 તમામ ગ્રાહકોની યાદી":
     st.markdown("<h2 style='color:#0f172a;'>📁 તમામ ગ્રાહકોની યાદી</h2>", unsafe_allow_html=True)
     if not df.empty:
         st.dataframe(df, use_container_width=True)
@@ -585,7 +592,7 @@ elif st.session_state.current_page == "⚙️ એડિટ / ડિલીટ":
         
         if sel_label:
             p_id = opts[sel_label]
-            s_row = df[df['id'] == p_id].iloc[0]
+            s_row = df[df['id'].astype(str) == str(p_id)].iloc[0]
             
             with st.form("edit_form"):
                 e1, e2 = st.columns(2)
@@ -635,24 +642,17 @@ elif st.session_state.current_page == "💾 બેકઅપ & રિસ્ટો
             st.info("બેકઅપ લેવા માટે ડેટાબેઝમાં કોઈ એન્ટ્રી નથી.")
     with bk2:
         st.markdown("### 📤 રિસ્ટોર ડેટા")
-        st.write("અગાઉ લીધેલ બેકઅપ CSV ફાઇલ અપલોડ કરીને ડેટા પાછો લાવો.")
+        st.write("અગાઉ લીધેલ બેકઅપ CSV ફાઇલ અપલોડ કરીને ડેટા Google Sheets માં રિસ્ટોર કરો.")
         up_file = st.file_uploader("CSV ફાઇલ અપલોડ કરો", type=["csv"])
         if up_file and st.button("🚀 ડેટા રિસ્ટોર કરો"):
             try:
                 new_df = pd.read_csv(up_file)
-                for _, r in new_df.iterrows():
-                    insert_policy(
-                        str(r.get('name', '')),
-                        str(r.get('mobile', '')),
-                        str(r.get('vehicle_no', '')),
-                        str(r.get('vehicle_type', '')),
-                        str(r.get('policy_company', '')),
-                        str(r.get('policy_no', '')),
-                        float(r.get('premium_amount', 0)),
-                        str(r.get('expiry_date', '')),
-                        str(r.get('remarks', ''))
-                    )
-                st.success("ડેટા સફળતાપૂર્વક રિસ્ટોર થઈ ગયો!")
+                for col in COLUMNS:
+                    if col not in new_df.columns:
+                        new_df[col] = ""
+                new_df = new_df[COLUMNS]
+                save_all_data(new_df)
+                st.success("ડેટા સફળતાપૂર્વક Google Sheets માં રિસ્ટોર થઈ ગયો!")
                 st.rerun()
             except Exception as err:
                 st.error(f"એરર આવી: {err}")
@@ -672,13 +672,13 @@ elif st.session_state.current_page == "🔐 પિન બદલો":
             save_pin_btn = st.form_submit_button("💾 નવો પિન સેવ કરો")
             
             if save_pin_btn:
-                current_db_pin = get_current_pin()
-                if old_pin_input != current_db_pin:
+                current_pin = get_current_pin()
+                if old_pin_input != current_pin:
                     st.error("❌ જૂનો પિન ખોટો છે.")
                 elif not new_pin_input.strip() or len(new_pin_input.strip()) < 4:
                     st.warning("⚠️ નવો પિન ઓછામાં ઓછો ૪ અંકનો હોવો જોઈએ.")
                 elif new_pin_input != confirm_pin_input:
                     st.error("❌ નવો પિન અને કન્ફર્મ પિન મેચ થતા નથી.")
                 else:
-                    update_pin(new_pin_input.strip())
+                    update_pin_gsheet(new_pin_input.strip())
                     st.success("✅ સિક્યોરિટી પિન સફળતાપૂર્વક બદલાઈ ગયો છે!")
