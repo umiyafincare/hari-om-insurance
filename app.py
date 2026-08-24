@@ -187,9 +187,7 @@ def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium,
     new_df.to_csv(LOCAL_CSV, index=False)
 
 def update_policy(p_id, name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
-    df = get_data()
-    # TypeError અટકાવવા માટે સમગ્ર DataFrame ને સ્ટ્રિંગ બનાવવું
-    df = df.astype(str)
+    df = get_data().astype(str)
     idx = df[df["id"].astype(str) == str(p_id)].index
     if not idx.empty:
         i = idx[0]
@@ -306,6 +304,7 @@ st.markdown("""
     .reminder-card { background: #ffffff; border-radius: 14px; padding: 18px; margin-bottom: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03); }
     .customer-found-card { background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 14px; padding: 18px; margin-top: 15px; margin-bottom: 15px; }
     .customer-not-found-card { background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 14px; padding: 18px; margin-top: 15px; margin-bottom: 15px; }
+    .customer-info-box { background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 12px; padding: 12px 16px; margin-bottom: 15px; }
     .badge-urgent { background: #fee2e2; color: #b91c1c; padding: 5px 12px; border-radius: 9999px; font-weight: 600; font-size: 12px; border: 1px solid #fca5a5; }
     .badge-warning { background: #fef3c7; color: #b45309; padding: 5px 12px; border-radius: 9999px; font-weight: 600; font-size: 12px; border: 1px solid #fde68a; }
     .badge-success { background: #dcfce7; color: #166534; padding: 5px 12px; border-radius: 9999px; font-weight: 600; font-size: 12px; border: 1px solid #bbf7d0; }
@@ -405,6 +404,7 @@ with st.sidebar:
 if st.session_state.current_page == "📊 ડેશબોર્ડ":
     st.markdown("<h2 style='color:#0f172a;'>📊 બિઝનેસ ડેશબોર્ડ</h2>", unsafe_allow_html=True)
     
+    # ક્વિક સર્ચ સેક્શન
     st.markdown("### 🔍 ક્વિક સર્ચ & ગ્રાહક સ્ટેટસ (નવો કે જૂનો ગ્રાહક)")
     search_term = st.text_input("વાહન નંબર, મોબાઈલ નંબર કે પોલિસી નંબર નાખો:", placeholder="GJ-xx-xxxx / મોબાઈલ / પોલિસી નં.")
     
@@ -514,10 +514,11 @@ elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડે�
         else:
             st.success("આગામી ૧૫ દિવસમાં કોઈ પોલિસી એક્સપાયર થતી નથી.")
 
-# ----------------- 3. નવી પોલિસી એન્ટ્રી -----------------
+# ----------------- 3. નવી પોલિસી એન્ટ્રી (WITH LIVE OLD/NEW CHECK & AUTO-REFRESH) -----------------
 elif st.session_state.current_page == "➕ નવી પોલિસી એન્ટ્રી":
     st.markdown("<h2 style='color:#0f172a;'>➕ નવી પોલિસી ઉમેરો</h2>", unsafe_allow_html=True)
     
+    # PDF Upload
     st.markdown("### 📄 પોલિસી PDF અપલોડ કરો (Auto-Fetch Data)")
     uploaded_pdf = st.file_uploader("જૂની અથવા નવી પોલિસીની PDF ફાઇલ અપલોડ કરો:", type=["pdf"])
     
@@ -533,33 +534,57 @@ elif st.session_state.current_page == "➕ નવી પોલિસી એન�
             auto_data.update(extracted)
             if not auto_data["expiry_date"]:
                 auto_data["expiry_date"] = date.today()
-            st.success("✅ PDF માંથી વિગતો સફળતાપૂર્વક મેળવી લીધી છે! નીચે ચેક કરીને સેવ કરો.")
+            st.success("✅ PDF માંથી વિગતો સફળતાપૂર્વક મેળવી લીધી છે!")
 
-    with st.form("new_entry_form", clear_on_submit=False):
+    # લાઈવ જૂના ગ્રાહકનું ચેકિંગ ઇનપુટ
+    st.markdown("---")
+    st.markdown("### ✍️ ગ્રાહકની વિગતો દાખલ કરો")
+    check_veh = st.text_input("🔍 વાહન નંબર દાખલ કરો (જૂનો કે નવો ગ્રાહક ચેક કરવા):", value=auto_data["vehicle_no"], placeholder="GJ-02-AB-1234").upper().strip()
+    
+    # લાઈવ ડુપ્લિકેટ/જૂનો ગ્રાહક સ્ટેટસ બતાવવું
+    if check_veh:
+        clean_v = check_veh.replace("-", "").replace(" ", "").lower()
+        matched = df[df["vehicle_no"].astype(str).str.lower().str.replace("-", "").str.replace(" ", "") == clean_v]
+        if not matched.empty:
+            old_r = matched.iloc[-1]
+            st.markdown(f"""
+            <div class="customer-info-box">
+                <span class="badge-warning">⚠️ જૂનો ગ્રાહક છે (પહેલેથી સિસ્ટમમાં છે)</span><br>
+                <b>નામ:</b> {old_r['name']} | <b>મોબાઇલ:</b> {old_r['mobile']} | <b>છેલ્લી કંપની:</b> {old_r['policy_company']} | <b>એક્સપાયરી:</b> {old_r['expiry_date']}
+            </div>
+            """, unsafe_allow_html=True)
+            if not auto_data["name"]: auto_data["name"] = str(old_r['name'])
+            if not auto_data["mobile"]: auto_data["mobile"] = str(old_r['mobile'])
+            if not auto_data["policy_no"]: auto_data["policy_no"] = str(old_r['policy_no'])
+        else:
+            st.markdown('<span class="badge-success">✨ નવો ગ્રાહક છે (સિસ્ટમમાં પહેલીવાર એન્ટ્રી)</span>', unsafe_allow_html=True)
+
+    # ઓટો-રીફ્રેશ (Clear on Submit) ફોર્મ
+    with st.form("new_entry_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         name = c1.text_input("ગ્રાહકનું પૂરું નામ *", value=auto_data["name"])
         mobile = c2.text_input("મોબાઇલ નંબર *", value=auto_data["mobile"])
-        vehicle_no = c1.text_input("વાહન નંબર (GJ-xx-xxxx) *", value=auto_data["vehicle_no"])
         
         v_types = ["2 Wheeler", "4 Wheeler (Car)", "Commercial Goods", "Passenger Taxi", "Tractor", "અન્ય"]
         v_idx = v_types.index(auto_data["vehicle_type"]) if auto_data["vehicle_type"] in v_types else 0
-        vehicle_type = c2.selectbox("વાહનનો પ્રકાર", v_types, index=v_idx)
+        vehicle_type = c1.selectbox("વાહનનો પ્રકાર", v_types, index=v_idx)
         
         c_idx = COMPANIES_LIST.index(auto_data["company"]) if auto_data["company"] in COMPANIES_LIST else 0
-        company = c1.selectbox("ઇન્સ્યોરન્સ કંપની", COMPANIES_LIST, index=c_idx)
+        company = c2.selectbox("ઇન્સ્યોરન્સ કંપની", COMPANIES_LIST, index=c_idx)
         
-        policy_no = c2.text_input("પોલિસી નંબર", value=auto_data["policy_no"])
-        premium = c1.number_input("પ્રીમિયમ રકમ (₹)", min_value=0, step=500, value=auto_data["premium"])
-        expiry = c2.date_input("પોલિસી એક્સપાયરી તારીખ (DD/MM/YYYY) *", value=auto_data["expiry_date"], format="DD/MM/YYYY")
-        remarks = st.text_input("નોંધ / રિમાર્ક્સ")
+        policy_no = c1.text_input("પોલિસી નંબર", value=auto_data["policy_no"])
+        premium = c2.number_input("પ્રીમિયમ રકમ (₹)", min_value=0, step=500, value=auto_data["premium"])
+        expiry = c1.date_input("પોલિસી એક્સપાયરી તારીખ (DD/MM/YYYY) *", value=auto_data["expiry_date"], format="DD/MM/YYYY")
+        remarks = c2.text_input("નોંધ / રિમાર્ક્સ")
         
-        if st.form_submit_button("💾 પોલિસી સેવ કરો"):
-            if name.strip() and mobile.strip() and vehicle_no.strip():
-                insert_policy(name.strip(), mobile.strip(), vehicle_no.upper().strip(), vehicle_type, company, policy_no.strip(), premium, expiry, remarks.strip())
-                st.success("✅ નવો ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો (DD/MM/YYYY ફોર્મેટમાં સેવ થયો)!")
+        if st.form_submit_button("💾 પોલિસી સેવ કરો (Auto-Clear)"):
+            final_v_no = check_veh if check_veh else auto_data["vehicle_no"]
+            if name.strip() and mobile.strip() and final_v_no.strip():
+                insert_policy(name.strip(), mobile.strip(), final_v_no.upper().strip(), vehicle_type, company, policy_no.strip(), premium, expiry, remarks.strip())
+                st.success("✅ નવો ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો અને ફોર્મ રીફ્રેશ થઈ ગયું!")
                 st.rerun()
             else:
-                st.error("નામ, મોબાઇલ અને વાહન નંબર જરૂરી છે.")
+                st.error("કૃપા કરીને નામ, મોબાઇલ અને વાહન નંબર દાખલ કરો.")
 
 # ----------------- 4. તમામ ગ્રાહકોની યાદી -----------------
 elif st.session_state.current_page == "📁 તમામ ગ્રાહકોની યાદી":
