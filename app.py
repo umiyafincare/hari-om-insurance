@@ -27,7 +27,6 @@ COLUMNS = [
     "expiry_date", "remarks", "last_renewed"
 ]
 
-# તમામ ૨૪ ઇન્સ્યોરન્સ કંપનીઓનું લિસ્ટ
 COMPANIES_LIST = [
     "ACKO General Insurance",
     "Bajaj Allianz General Insurance",
@@ -113,6 +112,7 @@ def get_data():
                     df[col] = ""
             df_clean = df[COLUMNS].dropna(how="all")
             if not df_clean.empty:
+                df_clean = df_clean.astype(str)
                 df_clean["expiry_date"] = df_clean["expiry_date"].apply(format_to_dd_mm_yyyy)
                 df_clean["last_renewed"] = df_clean["last_renewed"].apply(format_to_dd_mm_yyyy)
                 df_clean.to_csv(LOCAL_CSV, index=False)
@@ -121,7 +121,7 @@ def get_data():
             pass
             
     if os.path.exists(LOCAL_CSV):
-        df_local = pd.read_csv(LOCAL_CSV)
+        df_local = pd.read_csv(LOCAL_CSV, dtype=str)
         for col in COLUMNS:
             if col not in df_local.columns:
                 df_local[col] = ""
@@ -132,15 +132,16 @@ def get_data():
 
 def save_all_to_sheet(df):
     sheet = get_sheet()
-    df["expiry_date"] = df["expiry_date"].apply(format_to_dd_mm_yyyy)
-    df["last_renewed"] = df["last_renewed"].apply(format_to_dd_mm_yyyy)
-    df.to_csv(LOCAL_CSV, index=False)
+    df_save = df.copy().astype(str)
+    df_save["expiry_date"] = df_save["expiry_date"].apply(format_to_dd_mm_yyyy)
+    df_save["last_renewed"] = df_save["last_renewed"].apply(format_to_dd_mm_yyyy)
+    df_save.to_csv(LOCAL_CSV, index=False)
     if sheet:
         try:
             sheet.clear()
             sheet.append_row(COLUMNS)
-            if not df.empty:
-                sheet.append_rows(df.values.tolist())
+            if not df_save.empty:
+                sheet.append_rows(df_save.values.tolist())
             return True
         except Exception:
             return False
@@ -161,17 +162,17 @@ def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium,
     today_str = date.today().strftime("%d/%m/%Y")
 
     new_row = [
-        new_id,
-        name,
+        str(new_id),
+        str(name),
         str(mobile),
-        vehicle_no,
-        v_type,
-        company,
+        str(vehicle_no),
+        str(v_type),
+        str(company),
         str(policy_no),
-        premium,
-        formatted_exp,
-        remarks,
-        today_str
+        str(premium),
+        str(formatted_exp),
+        str(remarks),
+        str(today_str)
     ]
     
     sheet = get_sheet()
@@ -182,27 +183,29 @@ def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium,
             pass
             
     row_dict = dict(zip(COLUMNS, new_row))
-    new_df = pd.concat([df, pd.DataFrame([row_dict])], ignore_index=True)
+    new_df = pd.concat([df.astype(str), pd.DataFrame([row_dict]).astype(str)], ignore_index=True)
     new_df.to_csv(LOCAL_CSV, index=False)
 
 def update_policy(p_id, name, mobile, vehicle_no, v_type, company, policy_no, premium, expiry, remarks):
     df = get_data()
+    # TypeError અટકાવવા માટે સમગ્ર DataFrame ને સ્ટ્રિંગ બનાવવું
+    df = df.astype(str)
     idx = df[df["id"].astype(str) == str(p_id)].index
     if not idx.empty:
         i = idx[0]
-        df.at[i, "name"] = name
-        df.at[i, "mobile"] = str(mobile)
-        df.at[i, "vehicle_no"] = vehicle_no
-        df.at[i, "vehicle_type"] = v_type
-        df.at[i, "policy_company"] = company
-        df.at[i, "policy_no"] = str(policy_no)
-        df.at[i, "premium_amount"] = premium
-        df.at[i, "expiry_date"] = format_to_dd_mm_yyyy(expiry)
-        df.at[i, "remarks"] = remarks
+        df.loc[i, "name"] = str(name)
+        df.loc[i, "mobile"] = str(mobile)
+        df.loc[i, "vehicle_no"] = str(vehicle_no)
+        df.loc[i, "vehicle_type"] = str(v_type)
+        df.loc[i, "policy_company"] = str(company)
+        df.loc[i, "policy_no"] = str(policy_no)
+        df.loc[i, "premium_amount"] = str(premium)
+        df.loc[i, "expiry_date"] = str(format_to_dd_mm_yyyy(expiry))
+        df.loc[i, "remarks"] = str(remarks)
         save_all_to_sheet(df)
 
 def delete_policy(p_id):
-    df = get_data()
+    df = get_data().astype(str)
     df = df[df["id"].astype(str) != str(p_id)].reset_index(drop=True)
     save_all_to_sheet(df)
 
@@ -213,12 +216,12 @@ def renew_one_year(p_id, current_expiry_str):
     new_dt = (curr_dt + timedelta(days=365)).strftime("%d/%m/%Y")
     today_str = date.today().strftime("%d/%m/%Y")
     
-    df = get_data()
+    df = get_data().astype(str)
     idx = df[df["id"].astype(str) == str(p_id)].index
     if not idx.empty:
         i = idx[0]
-        df.at[i, "expiry_date"] = new_dt
-        df.at[i, "last_renewed"] = today_str
+        df.loc[i, "expiry_date"] = str(new_dt)
+        df.loc[i, "last_renewed"] = str(today_str)
         save_all_to_sheet(df)
 
 # ----------------- OCR / PDF AUTO-PARSER -----------------
@@ -240,24 +243,20 @@ def extract_info_from_pdf(uploaded_file):
         for page in reader.pages:
             text += page.extract_text() or ""
         
-        # ૧. વાહન નંબર (GJ-xx-xxxx)
         veh_match = re.search(r'\b(GJ[\s\-]?[0-9]{1,2}[\s\-]?[A-Z]{1,3}[\s\-]?[0-9]{4})\b', text, re.IGNORECASE)
         if veh_match:
             raw_v = veh_match.group(1).upper().replace(" ", "").replace("-", "")
             if len(raw_v) >= 9:
                 extracted["vehicle_no"] = f"{raw_v[:2]}-{raw_v[2:4]}-{raw_v[4:-4]}-{raw_v[-4:]}"
 
-        # ૨. મોબાઈલ નંબર
         mob_match = re.search(r'\b([6-9][0-9]{9})\b', text)
         if mob_match:
             extracted["mobile"] = mob_match.group(1)
 
-        # ૩. પોલિસી નંબર
         pol_match = re.search(r'(?:Policy\s*(?:No|Number|#)?[:\s\-]+)([A-Z0-9\/\-]{8,25})', text, re.IGNORECASE)
         if pol_match:
             extracted["policy_no"] = pol_match.group(1).strip()
 
-        # ૪. પ્રીમિયમ રકમ
         prem_match = re.search(r'(?:Total\s*Premium|Net\s*Premium|Gross\s*Premium|Amount)[:\s₹Rs\.]*([0-9,]+(?:\.[0-9]{2})?)', text, re.IGNORECASE)
         if prem_match:
             clean_p = prem_match.group(1).replace(",", "")
@@ -266,21 +265,18 @@ def extract_info_from_pdf(uploaded_file):
             except Exception:
                 pass
 
-        # ૫. એક્સપાયરી તારીખ
         date_match = re.search(r'(?:Expiry\s*Date|Valid\s*Upto|Period\s*of\s*Insurance\s*To|To\s*Midnight\s*of)[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})', text, re.IGNORECASE)
         if date_match:
             parsed = parse_to_date_obj(date_match.group(1))
             if parsed:
                 extracted["expiry_date"] = parsed
 
-        # ૬. કંપની શોધવી
         for comp in COMPANIES_LIST:
             short_name = comp.split(" ")[0].lower()
             if short_name in text.lower():
                 extracted["company"] = comp
                 break
                 
-        # ૭. વાહનનો પ્રકાર
         if any(w in text.lower() for w in ["motorcycle", "scooter", "activa", "two wheeler", "2-wheeler"]):
             extracted["vehicle_type"] = "2 Wheeler"
         elif any(w in text.lower() for w in ["car", "motor car", "private car", "4-wheeler"]):
@@ -409,7 +405,6 @@ with st.sidebar:
 if st.session_state.current_page == "📊 ડેશબોર્ડ":
     st.markdown("<h2 style='color:#0f172a;'>📊 બિઝનેસ ડેશબોર્ડ</h2>", unsafe_allow_html=True)
     
-    # ક્વિક સર્ચ
     st.markdown("### 🔍 ક્વિક સર્ચ & ગ્રાહક સ્ટેટસ (નવો કે જૂનો ગ્રાહક)")
     search_term = st.text_input("વાહન નંબર, મોબાઈલ નંબર કે પોલિસી નંબર નાખો:", placeholder="GJ-xx-xxxx / મોબાઈલ / પોલિસી નં.")
     
@@ -519,7 +514,7 @@ elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડે�
         else:
             st.success("આગામી ૧૫ દિવસમાં કોઈ પોલિસી એક્સપાયર થતી નથી.")
 
-# ----------------- 3. નવી પોલિસી એન્ટ્રી (WITH PDF AUTO-FETCH & 24 COMPANIES) -----------------
+# ----------------- 3. નવી પોલિસી એન્ટ્રી -----------------
 elif st.session_state.current_page == "➕ નવી પોલિસી એન્ટ્રી":
     st.markdown("<h2 style='color:#0f172a;'>➕ નવી પોલિસી ઉમેરો</h2>", unsafe_allow_html=True)
     
@@ -615,7 +610,7 @@ elif st.session_state.current_page == "⚙️ એડિટ / ડિલીટ":
                 ub1, ub2 = st.columns(2)
                 if ub1.form_submit_button("🔄 વિગતો અપડેટ કરો"):
                     update_policy(p_id, en.strip(), em.strip(), ev.upper().strip(), et, ec, ep.strip(), eprem, eexp, erem.strip())
-                    st.success("વિગતો અપડેટ થઈ ગઈ!")
+                    st.success("વિગતો સફળતાપૂર્વક અપડેટ થઈ ગઈ!")
                     st.rerun()
                 if ub2.form_submit_button("🗑️ એન્ટ્રી ડિલીટ કરો"):
                     delete_policy(p_id)
@@ -638,7 +633,7 @@ elif st.session_state.current_page == "💾 બેકઅપ & રિસ્ટો
         up_file = st.file_uploader("CSV ફાઇલ અપલોડ કરો", type=["csv"])
         if up_file and st.button("🚀 ડેટા રિસ્ટોર કરો"):
             try:
-                new_df = pd.read_csv(up_file)
+                new_df = pd.read_csv(up_file, dtype=str)
                 for col in COLUMNS:
                     if col not in new_df.columns:
                         new_df[col] = ""
