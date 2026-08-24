@@ -302,6 +302,7 @@ st.markdown("""
     .login-badge { background: #eff6ff; color: #1e3a8a; padding: 6px 14px; border-radius: 9999px; font-size: 12px; font-weight: 600; display: inline-block; margin-bottom: 12px; border: 1px solid #bfdbfe; }
     [data-testid="stMetric"] { background: #ffffff; padding: 18px 20px; border-radius: 14px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0; border-top: 4px solid #1E3A8A; }
     .reminder-card { background: #ffffff; border-radius: 14px; padding: 18px; margin-bottom: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03); }
+    .reminder-card-expired { background: #fff5f5; border-radius: 14px; padding: 18px; margin-bottom: 12px; border: 1.5px solid #fca5a5; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.05); }
     .customer-found-card { background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 14px; padding: 18px; margin-top: 15px; margin-bottom: 15px; }
     .customer-not-found-card { background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 14px; padding: 18px; margin-top: 15px; margin-bottom: 15px; }
     .customer-info-box { background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 12px; padding: 12px 16px; margin-bottom: 15px; }
@@ -404,7 +405,7 @@ with st.sidebar:
 if st.session_state.current_page == "📊 ડેશબોર્ડ":
     st.markdown("<h2 style='color:#0f172a;'>📊 બિઝનેસ ડેશબોર્ડ</h2>", unsafe_allow_html=True)
     
-    # ક્વિક સર્ચ સેક્શન
+    # ક્વિક સર્ચ
     st.markdown("### 🔍 ક્વિક સર્ચ & ગ્રાહક સ્ટેટસ (નવો કે જૂનો ગ્રાહક)")
     search_term = st.text_input("વાહન નંબર, મોબાઈલ નંબર કે પોલિસી નંબર નાખો:", placeholder="GJ-xx-xxxx / મોબાઈલ / પોલિસી નં.")
     
@@ -452,7 +453,6 @@ if st.session_state.current_page == "📊 ડેશબોર્ડ":
         valid = df_dash.dropna(subset=["expiry_dt"])
         days = valid["expiry_dt"].apply(lambda x: (x - today).days)
         
-        # ૧ મહિનો (૩૦ દિવસ) ફિલ્ટર
         due_30 = valid[(days <= 30) & (days >= 0)]
         expired = valid[days < 0]
         active = valid[days > 30]
@@ -460,26 +460,31 @@ if st.session_state.current_page == "📊 ડેશબોર્ડ":
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("👥 કુલ પોલિસી", len(df))
         c2.metric("⚠️ ૧ મહિનામાં બાકી (૩૦ દિવસ)", len(due_30))
-        c3.metric("✅ એક્ટિવ પોલિસી (>૩૦ દિવસ)", len(active))
+        c3.metric("🚨 મુદત પૂરી થયેલી (Expired)", len(expired))
         c4.metric("💰 કુલ પ્રીમિયમ", f"₹{df_dash['premium_clean'].sum():,.0f}")
     else:
         st.info("ડેટાબેઝ ખાલી છે.")
 
-# ----------------- 2. રીમાઇન્ડર ડેસ્ક (૧ મહિનો / ૩૦ દિવસ ફિલ્ટર) -----------------
+# ----------------- 2. રીમાઇન્ડર ડેસ્ક (EXPIRED + FUTURE FILTERS) -----------------
 elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડેસ્ક":
     st.markdown("<h2 style='color:#0f172a;'>🔔 પોલિસી રિન્યુઅલ રીમાઇન્ડર</h2>", unsafe_allow_html=True)
     
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        filter_mode = st.selectbox("સમયગાળો પસંદ કરો:", ["આગામી ૧ મહિનો (૩૦ દિવસ)", "આગામી ૧૫ દિવસ", "આગામી ૭ દિવસ", "આગામી ૩ દિવસ", "આજે એક્સપાયર થતી"])
+        filter_mode = st.selectbox(
+            "સમયગાળો પસંદ કરો:",
+            [
+                "🚨 મુદત પૂરી થયેલી (Expired / Lapsed)",
+                "📅 તમામ (પૂરી થયેલી + આગામી ૩૦ દિવસ)",
+                "આગામી ૧ મહિનો (૩૦ દિવસ)",
+                "આગામી ૧૫ દિવસ",
+                "આગામી ૭ દિવસ",
+                "આગામી ૩ દિવસ",
+                "આજે એક્સપાયર થતી"
+            ]
+        )
     with col_f2:
-        msg_style = st.selectbox("WhatsApp મેસેજ પ્રકાર:", ["સ્ટાન્ડર્ડ વિગતવાર મેસેજ", "અર્જન્ટ / લાસ્ટ રીમાઇન્ડર", "ટૂંકો મેસેજ"])
-
-    days_limit = 30
-    if "૧૫" in filter_mode: days_limit = 15
-    elif "૭" in filter_mode: days_limit = 7
-    elif "૩" in filter_mode: days_limit = 3
-    elif "આજે" in filter_mode: days_limit = 0
+        msg_style = st.selectbox("WhatsApp મેસેજ પ્રકાર:", ["ઓટોમેટિક (પરિસ્થિતિ મુજબ)", "અર્જન્ટ / લાસ્ટ રીમાઇન્ડર", "ટૂંકો મેસેજ", "સ્ટાન્ડર્ડ મેસેજ"])
 
     if not df.empty:
         df_rem = df.copy()
@@ -487,18 +492,51 @@ elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડે�
         today = date.today()
         df_rem = df_rem.dropna(subset=["expiry_dt"])
         df_rem["days_left"] = df_rem["expiry_dt"].apply(lambda x: (x - today).days)
-        reminders = df_rem[(df_rem["days_left"] <= days_limit) & (df_rem["days_left"] >= 0)].sort_values(by="days_left")
+        
+        # ફિલ્ટર લોજિક
+        if "Expired" in filter_mode:
+            reminders = df_rem[df_rem["days_left"] < 0].sort_values(by="days_left", ascending=False)
+        elif "તમામ" in filter_mode:
+            reminders = df_rem[df_rem["days_left"] <= 30].sort_values(by="days_left")
+        elif "૧૫" in filter_mode:
+            reminders = df_rem[(df_rem["days_left"] <= 15) & (df_rem["days_left"] >= 0)].sort_values(by="days_left")
+        elif "૭" in filter_mode:
+            reminders = df_rem[(df_rem["days_left"] <= 7) & (df_rem["days_left"] >= 0)].sort_values(by="days_left")
+        elif "૩" in filter_mode:
+            reminders = df_rem[(df_rem["days_left"] <= 3) & (df_rem["days_left"] >= 0)].sort_values(by="days_left")
+        elif "આજે" in filter_mode:
+            reminders = df_rem[df_rem["days_left"] == 0]
+        else: # આગામી ૩૦ દિવસ
+            reminders = df_rem[(df_rem["days_left"] <= 30) & (df_rem["days_left"] >= 0)].sort_values(by="days_left")
         
         if not reminders.empty:
             for _, row in reminders.iterrows():
-                if row['days_left'] <= 3:
+                is_expired = row['days_left'] < 0
+                days_abs = abs(row['days_left'])
+                
+                if is_expired:
+                    badge = f"<span class='badge-urgent'>❌ મુદત પૂર્ણ ({days_abs} દિવસ પહેલાં)</span>"
+                    card_class = "reminder-card-expired"
+                elif row['days_left'] <= 3:
                     badge = f"<span class='badge-urgent'>🚨 {row['days_left']} દિવસ બાકી</span>"
+                    card_class = "reminder-card"
                 elif row['days_left'] <= 15:
                     badge = f"<span class='badge-warning'>⏳ {row['days_left']} દિવસ બાકી</span>"
+                    card_class = "reminder-card"
                 else:
-                    badge = f"<span class='badge-success'>📅 {row['days_left']} દિવસ બાકી (૧ મહિનો)</span>"
+                    badge = f"<span class='badge-success'>📅 {row['days_left']} દિવસ બાકી</span>"
+                    card_class = "reminder-card"
 
-                if msg_style == "અર્જન્ટ / લાસ્ટ રીમાઇન્ડર":
+                # મેસેજ બનાવવો
+                if is_expired:
+                    msg = (
+                        f"🚨 *ઇન્સ્યોરન્સ પોલિસી લેપ્સ એલર્ટ* 🚨\n\n"
+                        f"નમસ્તે {row['name']}જી,\n"
+                        f"આપના વાહન *{row['vehicle_no']}* ના ઇન્સ્યોરન્સની મુદત તારીખ *{row['expiry_date']}* ના રોજ પૂર્ણ થઈ ગયેલ છે ({days_abs} દિવસ પહેલાં).\n\n"
+                        f"વાહન જોખમમાં ના રહે અને દંડથી બચવા માટે તાત્કાલિક નવી પોલિસી રિન્યુ કરાવી લેવા વિનંતી.\n\n"
+                        f"📞 *હરિ ઓમ ઇન્સ્યોરન્સ, કડી:* 7698564672 / 9714776364"
+                    )
+                elif msg_style == "અર્જન્ટ / લાસ્ટ રીમાઇન્ડર":
                     msg = (
                         f"🚨 *અર્જન્ટ રિન્યુઅલ એલર્ટ* 🚨\n\n"
                         f"નમસ્તે {row['name']}જી,\n"
@@ -523,7 +561,7 @@ elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડે�
                 wa_url = f"https://wa.me/91{clean_mobile}?text={urllib.parse.quote(msg)}"
                 
                 st.markdown(f"""
-                <div class="reminder-card">
+                <div class="{card_class}">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <h4 style="margin:0;">{row['name']} ({row['vehicle_no']})</h4>
                         {badge}
@@ -544,12 +582,13 @@ elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડે�
                         st.rerun()
                 st.divider()
         else:
-            st.success("પસંદ કરેલા સમયગાળામાં કોઈ પોલિસી એક્સપાયર થતી નથી.")
+            st.success("પસંદ કરેલા સમયગાળામાં કોઈ પોલિસી નથી.")
 
 # ----------------- 3. નવી પોલિસી એન્ટ્રી -----------------
 elif st.session_state.current_page == "➕ નવી પોલિસી એન્ટ્રી":
     st.markdown("<h2 style='color:#0f172a;'>➕ નવી પોલિસી ઉમેરો</h2>", unsafe_allow_html=True)
     
+    # PDF Upload
     st.markdown("### 📄 પોલિસી PDF અપલોડ કરો (Auto-Fetch Data)")
     uploaded_pdf = st.file_uploader("જૂની અથવા નવી પોલિસીની PDF ફાઇલ અપલોડ કરો:", type=["pdf"])
     
