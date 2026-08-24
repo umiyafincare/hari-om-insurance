@@ -452,41 +452,73 @@ if st.session_state.current_page == "📊 ડેશબોર્ડ":
         valid = df_dash.dropna(subset=["expiry_dt"])
         days = valid["expiry_dt"].apply(lambda x: (x - today).days)
         
-        due_15 = valid[(days <= 15) & (days >= 0)]
+        # ૧ મહિનો (૩૦ દિવસ) ફિલ્ટર
+        due_30 = valid[(days <= 30) & (days >= 0)]
         expired = valid[days < 0]
-        active = valid[days > 15]
+        active = valid[days > 30]
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("👥 કુલ પોલિસી", len(df))
-        c2.metric("⚠️ ૧૫ દિવસમાં બાકી", len(due_15))
-        c3.metric("✅ એક્ટિવ પોલિસી", len(active))
+        c2.metric("⚠️ ૧ મહિનામાં બાકી (૩૦ દિવસ)", len(due_30))
+        c3.metric("✅ એક્ટિવ પોલિસી (>૩૦ દિવસ)", len(active))
         c4.metric("💰 કુલ પ્રીમિયમ", f"₹{df_dash['premium_clean'].sum():,.0f}")
     else:
         st.info("ડેટાબેઝ ખાલી છે.")
 
-# ----------------- 2. રીમાઇન્ડર ડેસ્ક -----------------
+# ----------------- 2. રીમાઇન્ડર ડેસ્ક (૧ મહિનો / ૩૦ દિવસ ફિલ્ટર) -----------------
 elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડેસ્ક":
-    st.markdown("<h2 style='color:#0f172a;'>🔔 પોલિસી રિન્યુઅલ રીમાઇન્ડર (૧૫ દિવસ)</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color:#0f172a;'>🔔 પોલિસી રિન્યુઅલ રીમાઇન્ડર</h2>", unsafe_allow_html=True)
+    
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        filter_mode = st.selectbox("સમયગાળો પસંદ કરો:", ["આગામી ૧ મહિનો (૩૦ દિવસ)", "આગામી ૧૫ દિવસ", "આગામી ૭ દિવસ", "આગામી ૩ દિવસ", "આજે એક્સપાયર થતી"])
+    with col_f2:
+        msg_style = st.selectbox("WhatsApp મેસેજ પ્રકાર:", ["સ્ટાન્ડર્ડ વિગતવાર મેસેજ", "અર્જન્ટ / લાસ્ટ રીમાઇન્ડર", "ટૂંકો મેસેજ"])
+
+    days_limit = 30
+    if "૧૫" in filter_mode: days_limit = 15
+    elif "૭" in filter_mode: days_limit = 7
+    elif "૩" in filter_mode: days_limit = 3
+    elif "આજે" in filter_mode: days_limit = 0
+
     if not df.empty:
         df_rem = df.copy()
         df_rem["expiry_dt"] = df_rem["expiry_date"].apply(parse_to_date_obj)
         today = date.today()
         df_rem = df_rem.dropna(subset=["expiry_dt"])
         df_rem["days_left"] = df_rem["expiry_dt"].apply(lambda x: (x - today).days)
-        reminders = df_rem[(df_rem["days_left"] <= 15) & (df_rem["days_left"] >= 0)].sort_values(by="days_left")
+        reminders = df_rem[(df_rem["days_left"] <= days_limit) & (df_rem["days_left"] >= 0)].sort_values(by="days_left")
         
         if not reminders.empty:
             for _, row in reminders.iterrows():
-                badge = f"<span class='badge-urgent'>🚨 {row['days_left']} દિવસ બાકી</span>" if row['days_left'] <= 3 else f"<span class='badge-warning'>⏳ {row['days_left']} દિવસ બાકી</span>"
-                msg = (
-                    f"નમસ્તે {row['name']}જી,\n\n"
-                    f"હરિ ઓમ ઇન્સ્યોરન્સ તરફથી યાદી કે આપના વાહન નંબર *{row['vehicle_no']}* ના ઇન્સ્યોરન્સની મુદત તારીખ *{row['expiry_date']}* ના રોજ પૂર્ણ થઈ રહી છે ({row['days_left']} દિવસ બાકી).\n\n"
-                    f"📄 પોલિસી નં: {row['policy_no']}\n"
-                    f"🏢 કંપની: {row['policy_company']}\n\n"
-                    f"સમયસર રિન્યુ કરાવવા વિનંતી.\n"
-                    f"📞 7698564672 / 9714776364\n"
-                    f"*હરિ ઓમ ઇન્સ્યોરન્સ & લોન એડવાઈઝર, કડી*"
-                )
+                if row['days_left'] <= 3:
+                    badge = f"<span class='badge-urgent'>🚨 {row['days_left']} દિવસ બાકી</span>"
+                elif row['days_left'] <= 15:
+                    badge = f"<span class='badge-warning'>⏳ {row['days_left']} દિવસ બાકી</span>"
+                else:
+                    badge = f"<span class='badge-success'>📅 {row['days_left']} દિવસ બાકી (૧ મહિનો)</span>"
+
+                if msg_style == "અર્જન્ટ / લાસ્ટ રીમાઇન્ડર":
+                    msg = (
+                        f"🚨 *અર્જન્ટ રિન્યુઅલ એલર્ટ* 🚨\n\n"
+                        f"નમસ્તે {row['name']}જી,\n"
+                        f"આપના વાહન *{row['vehicle_no']}* ના ઇન્સ્યોરન્સની મુદત *{row['expiry_date']}* ના રોજ પૂર્ણ થાય છે ({row['days_left']} દિવસ બાકી).\n"
+                        f"પોલિસી લેપ્સ થયા વગર તાત્કાલિક રિન્યુ કરાવવા વિનંતી.\n\n"
+                        f"📞 *હરિ ઓમ ઇન્સ્યોરન્સ, કડી:* 7698564672 / 9714776364"
+                    )
+                elif msg_style == "ટૂંકો મેસેજ":
+                    msg = f"નમસ્તે {row['name']}જી, વાહન *{row['vehicle_no']}* ની પોલિસી તારીખ {row['expiry_date']} એ પૂર્ણ થાય છે. રિન્યુઅલ માટે સંપર્ક કરો: હરિ ઓમ ઇન્સ્યોરન્સ (Mo: 7698564672)."
+                else:
+                    msg = (
+                        f"નમસ્તે {row['name']}જી,\n\n"
+                        f"હરિ ઓમ ઇન્સ્યોરન્સ તરફથી યાદી કે આપના વાહન નંબર *{row['vehicle_no']}* ના ઇન્સ્યોરન્સની મુદત તારીખ *{row['expiry_date']}* ના રોજ પૂર્ણ થઈ રહી છે ({row['days_left']} દિવસ બાકી).\n\n"
+                        f"📄 પોલિસી નં: {row['policy_no']}\n"
+                        f"🏢 કંપની: {row['policy_company']}\n\n"
+                        f"સમયસર રિન્યુ કરાવવા વિનંતી.\n"
+                        f"📞 7698564672 / 9714776364\n"
+                        f"*હરિ ઓમ ઇન્સ્યોરન્સ & લોન એડવાઈઝર, કડી*"
+                    )
+
                 clean_mobile = "".join(filter(str.isdigit, str(row['mobile'])))[-10:]
                 wa_url = f"https://wa.me/91{clean_mobile}?text={urllib.parse.quote(msg)}"
                 
@@ -512,13 +544,12 @@ elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડે�
                         st.rerun()
                 st.divider()
         else:
-            st.success("આગામી ૧૫ દિવસમાં કોઈ પોલિસી એક્સપાયર થતી નથી.")
+            st.success("પસંદ કરેલા સમયગાળામાં કોઈ પોલિસી એક્સપાયર થતી નથી.")
 
-# ----------------- 3. નવી પોલિસી એન્ટ્રી (WITH LIVE OLD/NEW CHECK & AUTO-REFRESH) -----------------
+# ----------------- 3. નવી પોલિસી એન્ટ્રી -----------------
 elif st.session_state.current_page == "➕ નવી પોલિસી એન્ટ્રી":
     st.markdown("<h2 style='color:#0f172a;'>➕ નવી પોલિસી ઉમેરો</h2>", unsafe_allow_html=True)
     
-    # PDF Upload
     st.markdown("### 📄 પોલિસી PDF અપલોડ કરો (Auto-Fetch Data)")
     uploaded_pdf = st.file_uploader("જૂની અથવા નવી પોલિસીની PDF ફાઇલ અપલોડ કરો:", type=["pdf"])
     
@@ -536,12 +567,10 @@ elif st.session_state.current_page == "➕ નવી પોલિસી એન�
                 auto_data["expiry_date"] = date.today()
             st.success("✅ PDF માંથી વિગતો સફળતાપૂર્વક મેળવી લીધી છે!")
 
-    # લાઈવ જૂના ગ્રાહકનું ચેકિંગ ઇનપુટ
     st.markdown("---")
     st.markdown("### ✍️ ગ્રાહકની વિગતો દાખલ કરો")
     check_veh = st.text_input("🔍 વાહન નંબર દાખલ કરો (જૂનો કે નવો ગ્રાહક ચેક કરવા):", value=auto_data["vehicle_no"], placeholder="GJ-02-AB-1234").upper().strip()
     
-    # લાઈવ ડુપ્લિકેટ/જૂનો ગ્રાહક સ્ટેટસ બતાવવું
     if check_veh:
         clean_v = check_veh.replace("-", "").replace(" ", "").lower()
         matched = df[df["vehicle_no"].astype(str).str.lower().str.replace("-", "").str.replace(" ", "") == clean_v]
@@ -559,7 +588,6 @@ elif st.session_state.current_page == "➕ નવી પોલિસી એન�
         else:
             st.markdown('<span class="badge-success">✨ નવો ગ્રાહક છે (સિસ્ટમમાં પહેલીવાર એન્ટ્રી)</span>', unsafe_allow_html=True)
 
-    # ઓટો-રીફ્રેશ (Clear on Submit) ફોર્મ
     with st.form("new_entry_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         name = c1.text_input("ગ્રાહકનું પૂરું નામ *", value=auto_data["name"])
