@@ -3,8 +3,10 @@ import pandas as pd
 from datetime import datetime, date, timedelta
 import urllib.parse
 import os
+import re
 import gspread
 from google.oauth2.service_account import Credentials
+import pypdf
 
 # ----------------- પેજ કન્ફિગરેશન -----------------
 st.set_page_config(
@@ -24,6 +26,27 @@ COLUMNS = [
     "policy_company", "policy_no", "premium_amount", 
     "expiry_date", "remarks", "last_renewed"
 ]
+
+# ----------------- DATE FORMATTING UTILITIES -----------------
+def parse_to_date_obj(date_val):
+    """કોઈપણ ફોર્મેટની તારીખને date object માં ફેરવે છે"""
+    if pd.isna(date_val) or not str(date_val).strip():
+        return None
+    s = str(date_val).strip().split(" ")[0]
+    formats = ["%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d.%m.%Y", "%Y/%m/%d"]
+    for fmt in formats:
+        try:
+            return datetime.strptime(s, fmt).date()
+        except Exception:
+            pass
+    return None
+
+def format_to_dd_mm_yyyy(date_val):
+    """તારીખને હંમેશા DD/MM/YYYY ફોર્મેટમાં આપે છે"""
+    d_obj = parse_to_date_obj(date_val)
+    if d_obj:
+        return d_obj.strftime("%d/%m/%Y")
+    return str(date_val)
 
 @st.cache_resource
 def get_gspread_client():
@@ -62,6 +85,9 @@ def get_data():
                     df[col] = ""
             df_clean = df[COLUMNS].dropna(how="all")
             if not df_clean.empty:
+                # બધી તારીખોને DD/MM/YYYY માં ફોર્મેટ કરવી
+                df_clean["expiry_date"] = df_clean["expiry_date"].apply(format_to_dd_mm_yyyy)
+                df_clean["last_renewed"] = df_clean["last_renewed"].apply(format_to_dd_mm_yyyy)
                 df_clean.to_csv(LOCAL_CSV, index=False)
                 return df_clean
         except Exception:
@@ -72,11 +98,15 @@ def get_data():
         for col in COLUMNS:
             if col not in df_local.columns:
                 df_local[col] = ""
+        df_local["expiry_date"] = df_local["expiry_date"].apply(format_to_dd_mm_yyyy)
+        df_local["last_renewed"] = df_local["last_renewed"].apply(format_to_dd_mm_yyyy)
         return df_local[COLUMNS]
     return pd.DataFrame(columns=COLUMNS)
 
 def save_all_to_sheet(df):
     sheet = get_sheet()
+    df["expiry_date"] = df["expiry_date"].apply(format_to_dd_mm_yyyy)
+    df["last_renewed"] = df["last_renewed"].apply(format_to_dd_mm_yyyy)
     df.to_csv(LOCAL_CSV, index=False)
     if sheet:
         try:
@@ -100,6 +130,9 @@ def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium,
     else:
         new_id = 1
 
+    formatted_exp = format_to_dd_mm_yyyy(expiry)
+    today_str = date.today().strftime("%d/%m/%Y")
+
     new_row = [
         new_id,
         name,
@@ -109,9 +142,9 @@ def insert_policy(name, mobile, vehicle_no, v_type, company, policy_no, premium,
         company,
         str(policy_no),
         premium,
-        str(expiry),
+        formatted_exp,
         remarks,
-        str(date.today())
+        today_str
     ]
     
     sheet = get_sheet()
@@ -137,7 +170,7 @@ def update_policy(p_id, name, mobile, vehicle_no, v_type, company, policy_no, pr
         df.at[i, "policy_company"] = company
         df.at[i, "policy_no"] = str(policy_no)
         df.at[i, "premium_amount"] = premium
-        df.at[i, "expiry_date"] = str(expiry)
+        df.at[i, "expiry_date"] = format_to_dd_mm_yyyy(expiry)
         df.at[i, "remarks"] = remarks
         save_all_to_sheet(df)
 
@@ -147,21 +180,95 @@ def delete_policy(p_id):
     save_all_to_sheet(df)
 
 def renew_one_year(p_id, current_expiry_str):
-    try:
-        curr_dt = datetime.strptime(str(current_expiry_str), "%Y-%m-%d").date()
-    except Exception:
+    curr_dt = parse_to_date_obj(current_expiry_str)
+    if not curr_dt:
         curr_dt = date.today()
-    new_dt = str(curr_dt + timedelta(days=365))
+    new_dt = (curr_dt + timedelta(days=365)).strftime("%d/%m/%Y")
+    today_str = date.today().strftime("%d/%m/%Y")
     
     df = get_data()
     idx = df[df["id"].astype(str) == str(p_id)].index
     if not idx.empty:
         i = idx[0]
         df.at[i, "expiry_date"] = new_dt
-        df.at[i, "last_renewed"] = str(date.today())
+        df.at[i, "last_renewed"] = today_str
         save_all_to_sheet(df)
 
-# ----------------- MODERN CUSTOM CSS -----------------
+# ----------------- OCR / PDF AUTO-PARSER -----------------
+def extract_info_from_pdf(uploaded_file):
+    """Policy PDF માંથી વિગતો Auto-Fetch કરે છે"""
+    extracted = {
+        "name": "",
+        "mobile": "",
+        "vehicle_no": "",
+        "policy_no": "",
+        "premium": 0,
+        "expiry_date": None,
+        "company": "ICICI Lombard",
+        "vehicle_type": "2 Wheeler"
+    }
+    
+    try:
+        reader = pypdf.PdfReader(uploaded_file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        
+        # ૧. વાહન નંબર (GJ-xx-xxxx)
+        veh_match = re.search(r'\b(GJ[\s\-]?[0-9]{1,2}[\s\-]?[A-Z]{1,3}[\s\-]?[0-9]{4})\b', text, re.IGNORECASE)
+        if veh_match:
+            raw_v = veh_match.group(1).upper().replace(" ", "").replace("-", "")
+            if len(raw_v) >= 9:
+                extracted["vehicle_no"] = f"{raw_v[:2]}-{raw_v[2:4]}-{raw_v[4:-4]}-{raw_v[-4:]}"
+
+        # ૨. મોબાઈલ નંબર
+        mob_match = re.search(r'\b([6-9][0-9]{9})\b', text)
+        if mob_match:
+            extracted["mobile"] = mob_match.group(1)
+
+        # ૩. પોલિસી નંબર
+        pol_match = re.search(r'(?:Policy\s*(?:No|Number|#)?[:\s\-]+)([A-Z0-9\/\-]{8,25})', text, re.IGNORECASE)
+        if pol_match:
+            extracted["policy_no"] = pol_match.group(1).strip()
+
+        # ૪. પ્રીમિયમ રકમ
+        prem_match = re.search(r'(?:Total\s*Premium|Net\s*Premium|Gross\s*Premium|Amount)[:\s₹Rs\.]*([0-9,]+(?:\.[0-9]{2})?)', text, re.IGNORECASE)
+        if prem_match:
+            clean_p = prem_match.group(1).replace(",", "")
+            try:
+                extracted["premium"] = int(float(clean_p))
+            except Exception:
+                pass
+
+        # ૫. એક્સપાયરી તારીખ
+        date_match = re.search(r'(?:Expiry\s*Date|Valid\s*Upto|Period\s*of\s*Insurance\s*To|To\s*Midnight\s*of)[:\s]+([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{4})', text, re.IGNORECASE)
+        if date_match:
+            parsed = parse_to_date_obj(date_match.group(1))
+            if parsed:
+                extracted["expiry_date"] = parsed
+
+        # ૬. કંપનીનું નામ
+        for comp in ["ICICI Lombard", "Bajaj Allianz", "Tata AIG", "New India", "HDFC ERGO", "Go Digit", "National", "Star Health"]:
+            if comp.lower() in text.lower():
+                extracted["company"] = comp
+                break
+                
+        # ૭. વાહનનો પ્રકાર
+        if any(w in text.lower() for w in ["motorcycle", "scooter", "activa", "two wheeler", "2-wheeler"]):
+            extracted["vehicle_type"] = "2 Wheeler"
+        elif any(w in text.lower() for w in ["car", "motor car", "private car", "4-wheeler"]):
+            extracted["vehicle_type"] = "4 Wheeler (Car)"
+        elif any(w in text.lower() for w in ["goods", "carrier", "truck", "commercial"]):
+            extracted["vehicle_type"] = "Commercial Goods"
+        elif any(w in text.lower() for w in ["tractor"]):
+            extracted["vehicle_type"] = "Tractor"
+            
+    except Exception as e:
+        st.warning(f"⚠️ PDF માંથી ડેટા ફેચ કરવામાં તકલીફ: {e}")
+        
+    return extracted
+
+# ----------------- MODERN CSS -----------------
 st.markdown("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -225,13 +332,13 @@ if not st.session_state.authenticated:
                     st.error("❌ ખોટો પિન! ફરીથી પ્રયાસ કરો.")
     st.stop()
 
-# ----------------- MAIN APP -----------------
+# ----------------- MAIN APP INITIALIZATION -----------------
 df = get_data()
 
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "📊 ડેશબોર્ડ"
 
-# ----------------- સાઇડબાર -----------------
+# ----------------- સાઇડબાર નેવિગેશન -----------------
 with st.sidebar:
     logo_c1, logo_c2, logo_c3 = st.columns([1, 2.5, 1])
     with logo_c2:
@@ -317,7 +424,7 @@ if st.session_state.current_page == "📊 ડેશબોર્ડ":
 
     if not df.empty:
         df_dash = df.copy()
-        df_dash["expiry_dt"] = pd.to_datetime(df_dash["expiry_date"], errors="coerce").dt.date
+        df_dash["expiry_dt"] = df_dash["expiry_date"].apply(parse_to_date_obj)
         df_dash["premium_clean"] = pd.to_numeric(df_dash["premium_amount"], errors="coerce").fillna(0)
         today = date.today()
         valid = df_dash.dropna(subset=["expiry_dt"])
@@ -340,7 +447,7 @@ elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડે�
     st.markdown("<h2 style='color:#0f172a;'>🔔 પોલિસી રિન્યુઅલ રીમાઇન્ડર (૧૫ દિવસ)</h2>", unsafe_allow_html=True)
     if not df.empty:
         df_rem = df.copy()
-        df_rem["expiry_dt"] = pd.to_datetime(df_rem["expiry_date"], errors="coerce").dt.date
+        df_rem["expiry_dt"] = df_rem["expiry_date"].apply(parse_to_date_obj)
         today = date.today()
         df_rem = df_rem.dropna(subset=["expiry_dt"])
         df_rem["days_left"] = df_rem["expiry_dt"].apply(lambda x: (x - today).days)
@@ -368,7 +475,7 @@ elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડે�
                         {badge}
                     </div>
                     <p style="margin:8px 0 0 0; font-size:13px; color:#475569;">
-                        <b>કંપની:</b> {row['policy_company']} | <b>પોલિસી નં:</b> {row['policy_no']} | <b>એક્સપાયરી:</b> {row['expiry_date']}
+                        <b>કંપની:</b> {row['policy_company']} | <b>પોલિસી નં:</b> {row['policy_no']} | <b>એક્સપાયરી (DD/MM/YYYY):</b> {row['expiry_date']}
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -385,32 +492,59 @@ elif st.session_state.current_page == "🔔 રીમાઇન્ડર ડે�
         else:
             st.success("આગામી ૧૫ દિવસમાં કોઈ પોલિસી એક્સપાયર થતી નથી.")
 
-# ----------------- 3. નવી પોલિસી એન્ટ્રી -----------------
+# ----------------- 3. નવી પોલિસી એન્ટ્રી (WITH PDF/DOC AUTO-FETCH) -----------------
 elif st.session_state.current_page == "➕ નવી પોલિસી એન્ટ્રી":
     st.markdown("<h2 style='color:#0f172a;'>➕ નવી પોલિસી ઉમેરો</h2>", unsafe_allow_html=True)
-    with st.form("new_entry_form", clear_on_submit=True):
+    
+    # ઓટો-ફેચ સેક્શન (PDF Upload)
+    st.markdown("### 📄 પોલિસી PDF અપલોડ કરો (Auto-Fetch Data)")
+    uploaded_pdf = st.file_uploader("જૂની અથવા નવી પોલિસીની PDF ફાઇલ અપલોડ કરો:", type=["pdf"])
+    
+    auto_data = {
+        "name": "", "mobile": "", "vehicle_no": "", 
+        "policy_no": "", "premium": 0, "expiry_date": date.today(), 
+        "company": "ICICI Lombard", "vehicle_type": "2 Wheeler"
+    }
+    
+    if uploaded_pdf:
+        with st.spinner("🔍 PDF માંથી વિગતો વાંચી રહ્યા છીએ..."):
+            extracted = extract_info_from_pdf(uploaded_pdf)
+            auto_data.update(extracted)
+            if not auto_data["expiry_date"]:
+                auto_data["expiry_date"] = date.today()
+            st.success("✅ PDF માંથી વિગતો સફળતાપૂર્વક મેળવી લીધી છે! નીચે ચેક કરીને સેવ કરો.")
+
+    # એન્ટ્રી ફોર્મ
+    with st.form("new_entry_form", clear_on_submit=False):
         c1, c2 = st.columns(2)
-        name = c1.text_input("ગ્રાહકનું પૂરું નામ *")
-        mobile = c2.text_input("મોબાઇલ નંબર *")
-        vehicle_no = c1.text_input("વાહન નંબર (GJ-xx-xxxx) *")
-        vehicle_type = c2.selectbox("વાહનનો પ્રકાર", ["2 Wheeler", "4 Wheeler (Car)", "Commercial Goods", "Passenger Taxi", "Tractor", "અન્ય"])
-        company = c1.selectbox("ઇન્સ્યોરન્સ કંપની", ["ICICI Lombard", "Bajaj Allianz", "Tata AIG", "New India", "HDFC ERGO", "Go Digit", "National", "Star Health", "અન્ય"])
-        policy_no = c2.text_input("પોલિસી નંબર")
-        premium = c1.number_input("પ્રીમિયમ રકમ (₹)", min_value=0, step=500)
-        expiry = c2.date_input("પોલિસી એક્સપાયરી તારીખ *")
+        name = c1.text_input("ગ્રાહકનું પૂરું નામ *", value=auto_data["name"])
+        mobile = c2.text_input("મોબાઇલ નંબર *", value=auto_data["mobile"])
+        vehicle_no = c1.text_input("વાહન નંબર (GJ-xx-xxxx) *", value=auto_data["vehicle_no"])
+        
+        v_types = ["2 Wheeler", "4 Wheeler (Car)", "Commercial Goods", "Passenger Taxi", "Tractor", "અન્ય"]
+        v_idx = v_types.index(auto_data["vehicle_type"]) if auto_data["vehicle_type"] in v_types else 0
+        vehicle_type = c2.selectbox("વાહનનો પ્રકાર", v_types, index=v_idx)
+        
+        comp_list = ["ICICI Lombard", "Bajaj Allianz", "Tata AIG", "New India", "HDFC ERGO", "Go Digit", "National", "Star Health", "અન્ય"]
+        c_idx = comp_list.index(auto_data["company"]) if auto_data["company"] in comp_list else 0
+        company = c1.selectbox("ઇન્સ્યોરન્સ કંપની", comp_list, index=c_idx)
+        
+        policy_no = c2.text_input("પોલિસી નંબર", value=auto_data["policy_no"])
+        premium = c1.number_input("પ્રીમિયમ રકમ (₹)", min_value=0, step=500, value=auto_data["premium"])
+        expiry = c2.date_input("પોલિસી એક્સપાયરી તારીખ (DD/MM/YYYY) *", value=auto_data["expiry_date"], format="DD/MM/YYYY")
         remarks = st.text_input("નોંધ / રિમાર્ક્સ")
         
         if st.form_submit_button("💾 પોલિસી સેવ કરો"):
             if name.strip() and mobile.strip() and vehicle_no.strip():
-                insert_policy(name.strip(), mobile.strip(), vehicle_no.upper().strip(), vehicle_type, company, policy_no.strip(), premium, str(expiry), remarks.strip())
-                st.success("✅ નવો ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો!")
+                insert_policy(name.strip(), mobile.strip(), vehicle_no.upper().strip(), vehicle_type, company, policy_no.strip(), premium, expiry, remarks.strip())
+                st.success("✅ નવો ગ્રાહક સફળતાપૂર્વક ઉમેરાઈ ગયો (DD/MM/YYYY ફોર્મેટમાં સેવ થયો)!")
                 st.rerun()
             else:
                 st.error("નામ, મોબાઇલ અને વાહન નંબર જરૂરી છે.")
 
 # ----------------- 4. તમામ ગ્રાહકોની યાદી -----------------
 elif st.session_state.current_page == "📁 તમામ ગ્રાહકોની યાદી":
-    st.markdown("<h2 style='color:#0f172a;'>📁 તમામ ગ્રાહકોની યાદી</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color:#0f172a;'>📁 તમામ ગ્રાહકોની યાદી (DD/MM/YYYY Live)</h2>", unsafe_allow_html=True)
     if not df.empty:
         st.dataframe(df, use_container_width=True)
         csv_exp = df.to_csv(index=False).encode('utf-8')
@@ -442,14 +576,13 @@ elif st.session_state.current_page == "⚙️ એડિટ / ડિલીટ":
                 except Exception: prem_val = 0
                 eprem = e1.number_input("પ્રીમિયમ (₹)", value=prem_val, step=500)
                 
-                try: exp_val = datetime.strptime(str(s_row['expiry_date']), "%Y-%m-%d").date()
-                except Exception: exp_val = date.today()
-                eexp = e2.date_input("એક્સપાયરી તારીખ", value=exp_val)
+                exp_date_obj = parse_to_date_obj(s_row['expiry_date']) or date.today()
+                eexp = e2.date_input("એક્સપાયરી તારીખ", value=exp_date_obj, format="DD/MM/YYYY")
                 erem = st.text_input("નોંધ", value=str(s_row['remarks']))
                 
                 ub1, ub2 = st.columns(2)
                 if ub1.form_submit_button("🔄 વિગતો અપડેટ કરો"):
-                    update_policy(p_id, en.strip(), em.strip(), ev.upper().strip(), et, ec.strip(), ep.strip(), eprem, str(eexp), erem.strip())
+                    update_policy(p_id, en.strip(), em.strip(), ev.upper().strip(), et, ec.strip(), ep.strip(), eprem, eexp, erem.strip())
                     st.success("વિગતો અપડેટ થઈ ગઈ!")
                     st.rerun()
                 if ub2.form_submit_button("🗑️ એન્ટ્રી ડિલીટ કરો"):
@@ -467,7 +600,7 @@ elif st.session_state.current_page == "💾 બેકઅપ & રિસ્ટો
         st.markdown("### 📥 ડાઉનલોડ બેકઅપ")
         if not df.empty:
             bk_csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("⬇️ ડેટાબેઝ ડાઉનલોડ (CSV)", data=bk_csv, file_name=f"hari_om_backup_{date.today()}.csv", mime="text/csv")
+            st.download_button("⬇️ ડેટાબેઝ ડાઉનલોડ (CSV)", data=bk_csv, file_name=f"hari_om_backup_{date.today().strftime('%d_%m_%Y')}.csv", mime="text/csv")
     with bk2:
         st.markdown("### 📤 રિસ્ટોર ડેટા")
         up_file = st.file_uploader("CSV ફાઇલ અપલોડ કરો", type=["csv"])
